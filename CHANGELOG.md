@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Sync a whole year from the app.
+- App icon, drawn by `app/icon/render-icon.swift` at build time.
+
 ### Fixed
 
 - Counts now include every frame of a burst. Photos shows a burst as one photo, but the export writes all of

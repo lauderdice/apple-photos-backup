@@ -28,7 +28,7 @@ struct ProgressNode: Identifiable {
 
     var missingItems: Int { totalItems - syncedItems }
     var syncedFraction: Double { totalItems == 0 ? 1 : Double(syncedItems) / Double(totalItems) }
-    var canBeSynced: Bool { level == .month || level == .day }
+    var canBeSynced: Bool { level != .library }
 
     func indexedByID() -> [String: ProgressNode] {
         children.reduce(into: [id: self]) { index, child in

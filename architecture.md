@@ -71,7 +71,7 @@ TARGET/photos-backup-logs/export_<from>_to_<to>.csv   osxphotos report, appended
 A SwiftUI app for macOS 14+, built with SwiftPM. No Xcode project is needed; the command-line tools are enough.
 
 - `ProgressTree.swift`: decodes the JSON and builds the Library → year → month → day tree of `ProgressNode`s
-  (synced/total counts, inclusive date ranges, newest first). Only months and days can be synced.
+  (synced/total counts, inclusive date ranges, newest first). Years, months and days can be synced; the whole library can't, since it would rarely fit the free-space check.
 - `PhotosBackupCommand.swift`
   - `CommandRunning` is the protocol for running the CLI.
   - `ProcessCommandRunner` either collects output (`run`) or streams it line by line through an async
@@ -85,9 +85,11 @@ A SwiftUI app for macOS 14+, built with SwiftPM. No Xcode project is needed; the
   - `sync()` runs one export at a time, streams the log (last 2,000 lines kept), returns its `Task`, and
     reloads the counts afterwards.
 - `Views.swift`: a NavigationStack drill-down with a folder picker shown on first launch and a "Backup Folder…"
-  toolbar button. Rows show synced, missing and a progress bar; month and day rows have Sync buttons. The
+  toolbar button. Rows show synced, missing and a progress bar; year, month and day rows have Sync buttons. The
   bottom panel shows the sync status and live log.
-- `Info.plist`: bundle ID `io.github.photos-backup-tracker`, plus the Photos usage description.
+- `Info.plist`: bundle ID `io.github.photos-backup-tracker`, the Photos usage description and the icon file name.
+- `icon/render-icon.swift`: draws the 1024×1024 icon with Core Graphics. `app/build.sh` renders it, scales it into
+  an `.iconset` with `sips`, converts it with `iconutil` and caches the `.icns` until the script changes.
 
 ## Build and install
 

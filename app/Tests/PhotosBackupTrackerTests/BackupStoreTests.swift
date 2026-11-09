@@ -223,12 +223,19 @@ struct BackupStoreTests {
         #expect(store.isSyncing == false)
     }
 
-    @Test func libraryAndYearsCannotBeSyncedDirectly() async throws {
+    @Test func theWholeLibraryCannotBeSyncedAtOnce() async throws {
         await load([("2026-03-20", 18, 0)])
 
         #expect(store.sync(try node("library")) == nil)
-        #expect(store.sync(try node("2026")) == nil)
         #expect(await runner.exportCalls.isEmpty)
+    }
+
+    @Test func syncingAYearExportsTheWholeYear() async throws {
+        await load([("2016-12-24", 334, 0), ("2016-02-14", 5, 0)])
+
+        try await syncAndWait("2016")
+
+        #expect(await runner.exportCalls == [["export", "--from", "2016-01-01", "--to", "2016-12-31", target]])
     }
 
     @Test func onlyOneSyncRunsAtATime() async throws {

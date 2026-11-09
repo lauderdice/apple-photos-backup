@@ -10,7 +10,7 @@ optimized, and Advanced Data Protection can stay on.
 It has two parts:
 
 - **Photos Backup Tracker.app**: shows how many photos and videos are on the drive and how many are missing,
-  for the whole library and for every year, month and day. It can sync a month or a day with one click.
+  for the whole library and for every year, month and day. It can sync a year, a month or a day with one click.
 - **`photos-backup`**: the command-line tool that does the work, built on [osxphotos](https://github.com/RhetTbull/osxphotos).
 
 ## What ends up on the drive
@@ -58,7 +58,8 @@ drive and your Photos library untouched.
 1. Open **Photos Backup Tracker** from Applications or Spotlight.
 2. Choose your backup folder: any folder on your external drive. The app remembers it.
 3. The window shows **Photos Library — N synced · M missing**. Click through years, then months, then days.
-4. Click **Sync** on a month or a day. The live log appears at the bottom, and the counts refresh when it finishes.
+4. Click **Sync** on a year, a month or a day. The live log appears at the bottom, and the counts refresh when it finishes.
+   A range too big for your Mac's free space is refused (see Safety); sync it a month at a time instead.
 
 The first time, macOS asks whether the app may access your Photos library and your external drive. Allow both.
 macOS remembers your answers until the app is reinstalled.

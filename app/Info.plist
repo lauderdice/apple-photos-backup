@@ -8,6 +8,8 @@
     <string>Photos Backup Tracker</string>
     <key>CFBundleIdentifier</key>
     <string>io.github.photos-backup-tracker</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleExecutable</key>
     <string>PhotosBackupTracker</string>
     <key>CFBundlePackageType</key>

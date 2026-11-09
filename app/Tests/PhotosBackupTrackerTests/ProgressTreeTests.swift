@@ -67,10 +67,10 @@ struct ProgressTreeTests {
         #expect(dayNode.children.isEmpty)
     }
 
-    @Test func onlyMonthsAndDaysCanBeSynced() throws {
+    @Test func yearsMonthsAndDaysCanBeSyncedButNotTheWholeLibrary() throws {
         let index = library.indexedByID()
         #expect(try #require(index["library"]).canBeSynced == false)
-        #expect(try #require(index["2026"]).canBeSynced == false)
+        #expect(try #require(index["2026"]).canBeSynced == true)
         #expect(try #require(index["2026-03"]).canBeSynced == true)
         #expect(try #require(index["2026-03-20"]).canBeSynced == true)
     }
