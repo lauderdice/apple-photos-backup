@@ -1,0 +1,39 @@
+[project]
+name = "photos-backup"
+version = "0.1.0"
+description = "Back up your iCloud Photos library to an external drive, one date range at a time"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+keywords = ["icloud", "photos", "backup", "macos", "osxphotos"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: MacOS X",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Archiving :: Backup",
+]
+dependencies = ["osxphotos>=0.77.2"]
+
+[project.scripts]
+photos-backup = "photos_backup.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not e2e'"
+markers = [
+    "e2e: end-to-end tests (opt in with: -m e2e; real-library ones also need PHOTOS_BACKUP_E2E_TARGET)",
+    "needs_photos_access: needs macOS Photos access, so run it from Terminal.app",
+]
