@@ -2,7 +2,7 @@ from datetime import date
 from pathlib import Path
 
 from photos_backup.progress import DayProgress, compute_day_progress, read_synced_uuids
-from tests.conftest import FakePhotosDB, create_exported_file, photo_taken, write_export_database
+from tests.conftest import FakePhotosDB, burst_taken, create_exported_file, photo_taken, write_export_database
 
 
 class TestReadSyncedUuids:
@@ -55,6 +55,17 @@ class TestComputeDayProgress:
         assert progress == [
             DayProgress(day=date(2026, 1, 1), total_items=1, synced_items=0),
             DayProgress(day=date(2026, 2, 14), total_items=2, synced_items=1),
+        ]
+
+    def test_every_burst_frame_counts_toward_its_day(self, fake_library: Path, tmp_path: Path):
+        """Regression: the app showed a burst as one item although the export writes every frame."""
+        export_folder = tmp_path / "Photos Library"
+        FakePhotosDB.photos_in_library = [burst_taken("burst", hidden_frame_count=3, year=2016, month=12, day=24)]
+        create_exported_file(export_folder, "2016/12/24/frame.JPG")
+        write_export_database(export_folder, {"2016/12/24/frame.JPG": "burst-frame-1"})
+
+        assert compute_day_progress(fake_library, export_folder) == [
+            DayProgress(day=date(2016, 12, 24), total_items=4, synced_items=1)
         ]
 
     def test_empty_library_has_no_days(self, fake_library: Path, tmp_path: Path):

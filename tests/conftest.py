@@ -1,6 +1,6 @@
 """Shared fixtures: a fake Photos library, a fake external drive and real osxphotos export databases."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +19,8 @@ class FakePhoto:
     date: datetime
     ismissing: bool = True
     original_filesize: int = 1_000_000
+    burst: bool = False
+    burst_photos: list["FakePhoto"] = field(default_factory=list)
 
 
 class FakePhotosDB:
@@ -39,6 +41,12 @@ class FakePhotosDB:
 
 def photo_taken(uuid: str, year: int, month: int, day: int, hour: int = 12, **fields) -> FakePhoto:
     return FakePhoto(uuid=uuid, date=datetime(year, month, day, hour, tzinfo=timezone.utc), **fields)
+
+
+def burst_taken(key_photo_uuid: str, hidden_frame_count: int, year: int, month: int, day: int, **fields) -> FakePhoto:
+    """A burst as PhotosDB.photos() lists it: the key photo, with the other frames only in burst_photos."""
+    hidden_frames = [photo_taken(f"{key_photo_uuid}-frame-{number}", year, month, day, **fields) for number in range(hidden_frame_count)]
+    return photo_taken(key_photo_uuid, year, month, day, burst=True, burst_photos=hidden_frames, **fields)
 
 
 @pytest.fixture

@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Counts now include every frame of a burst. Photos shows a burst as one photo, but the export writes all of
+  its frames, so months with bursts showed fewer items than were exported, and the free-space check
+  underestimated downloads.
+
 ## [0.1.0]
 
 ### Added

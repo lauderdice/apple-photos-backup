@@ -10,6 +10,7 @@ backed up yet, and a re-export of a day that already is (which must change nothi
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -90,19 +91,22 @@ def test_status_reads_a_real_day(days: list[dict]):
 @requires_terminal_app
 @pytest.mark.needs_photos_access
 def test_dry_run_of_a_day_not_yet_backed_up_writes_no_photos(backup_target: Path, days: list[dict]):
-    small_unsynced_days = [day["day"] for day in days if day["synced_items"] == 0 and 1 <= day["total_items"] <= 5]
+    small_unsynced_days = [day for day in days if day["synced_items"] == 0 and 1 <= day["total_items"] <= 5]
     if not small_unsynced_days:
         pytest.skip("every small day is already backed up")
+    unsynced_day = small_unsynced_days[0]
     export_folder = backup_target / "Photos Library"
     photos_before = fingerprint_files(export_folder)
 
     completed = photos_backup(
-        "export", "--from", small_unsynced_days[0], "--to", small_unsynced_days[0], str(backup_target), "--dry-run"
+        "export", "--from", unsynced_day["day"], "--to", unsynced_day["day"], str(backup_target), "--dry-run"
     )
 
     assert completed.returncode == 0, completed.stdout
     assert fingerprint_files(export_folder) == photos_before
-    assert "Exporting" in newest_log(backup_target)
+    exported_item_count = re.search(r"Exporting (\d+) photo", newest_log(backup_target))
+    assert exported_item_count, "osxphotos did not report how many items it would export"
+    assert int(exported_item_count.group(1)) == unsynced_day["total_items"], "the app's count differs from what gets exported"
 
 
 @requires_terminal_app

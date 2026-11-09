@@ -10,6 +10,8 @@ from pathlib import Path
 
 import osxphotos
 
+from photos_backup.library import including_every_burst_frame
+
 EXPORT_DATABASE_NAME = ".osxphotos_export.db"
 SQLITE_SIDECAR_SUFFIXES = ("-wal", "-shm")
 
@@ -56,7 +58,7 @@ def compute_day_progress(library_path: Path, export_folder: Path) -> list[DayPro
 
     total_by_day: Counter[date] = Counter()
     synced_by_day: Counter[date] = Counter()
-    for photo in photos_db.photos():
+    for photo in including_every_burst_frame(photos_db.photos()):
         photo_day = photo.date.date()
         total_by_day[photo_day] += 1
         if photo.uuid in synced_uuids:

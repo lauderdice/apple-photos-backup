@@ -6,6 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 import osxphotos
+from osxphotos import PhotoInfo
 from osxphotos.utils import get_system_library_path
 
 
@@ -35,14 +36,31 @@ def system_library_path() -> Path:
     return Path(path)
 
 
+def including_every_burst_frame(photos: list[PhotoInfo]) -> list[PhotoInfo]:
+    """Adds the burst frames Photos hides behind each burst's key photo.
+
+    PhotosDB.photos() lists a burst as the one frame Photos shows, but osxphotos export writes every frame of
+    it, so anything that counts or sizes an export has to include them.
+    """
+    photos_by_uuid: dict[str, PhotoInfo] = {}
+    for photo in photos:
+        photos_by_uuid.setdefault(photo.uuid, photo)
+        if photo.burst:
+            for burst_frame in photo.burst_photos:
+                photos_by_uuid.setdefault(burst_frame.uuid, burst_frame)
+    return list(photos_by_uuid.values())
+
+
 def read_range_status(library_path: Path, date_range: DateRange, before_day: date) -> RangeStatus:
     if not library_path.is_dir():
         raise FileNotFoundError(f"Photos library not found: {library_path}")
 
     photos_db = osxphotos.PhotosDB(dbfile=str(library_path))
-    photos_in_range = photos_db.photos(
-        from_date=datetime.combine(date_range.first_day, datetime.min.time()),
-        to_date=datetime.combine(before_day, datetime.min.time()),
+    photos_in_range = including_every_burst_frame(
+        photos_db.photos(
+            from_date=datetime.combine(date_range.first_day, datetime.min.time()),
+            to_date=datetime.combine(before_day, datetime.min.time()),
+        )
     )
     photos_only_in_icloud = [photo for photo in photos_in_range if photo.ismissing]
 

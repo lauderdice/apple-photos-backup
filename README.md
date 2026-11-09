@@ -28,6 +28,8 @@ It has two parts:
 └── photos-backup-staging/   ← temporary download folder, emptied after each item
 ```
 
+Bursts are backed up in full: every frame, not just the one Photos shows, and the counts include them.
+
 Originals keep their own date, location and camera metadata, so importing the folder into Photos (or any other
 app) restores your timeline. Albums, people names and favourites live only in the Photos database and are not
 copied.

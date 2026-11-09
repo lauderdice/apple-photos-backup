@@ -39,6 +39,8 @@ TARGET/photos-backup-logs/export_<from>_to_<to>.csv   osxphotos report, appended
 ## Python package: `src/photos_backup/`
 
 - `library.py`
+  - `including_every_burst_frame()` adds the frames hidden behind each burst's key photo. `PhotosDB.photos()` lists
+    only the key photo, but osxphotos export writes every frame, so every count and size estimate goes through it.
   - `DateRange` holds an inclusive first/last day and is validated on creation.
   - `RangeStatus` holds item count, iCloud-only count, bytes to download, and free space on the library volume.
   - `read_range_status()` computes it.
