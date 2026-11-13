@@ -97,7 +97,12 @@ A SwiftUI app for macOS 14+, built with SwiftPM. No Xcode project is needed; the
   - `cancelSync()` cancels that task. `lastSyncOutcome`/`lastSyncTitle` stay until `dismissSyncResult()`.
 - `Views.swift`
   - The overview is a card with a progress ring, "N of M backed up", the missing count, the backup drive's
-    name and free space, and "Browse by Year".
+    name and free space (`store.backupDrive`, injectable through the store's `readDriveInfo`), and "Browse by Year".
+  - Numbers are formatted with `Text(…, format:)` interpolations, so they follow the SwiftUI `\.locale`. The
+    screenshots use that to render in English.
+  - `ProgressBar` is a SwiftUI capsule bar, green when complete and accent-coloured otherwise. Unlike AppKit's
+    progress indicator, it looks the same whether or not the window is active. List rows align their
+    separators to the row's leading edge (`listRowSeparatorLeading`).
   - First launch shows a three-step welcome; errors show `FriendlyError` text with Try Again.
   - Year, month and day screens have a header (ring, counts, Sync for the whole period) and rows with a status
     icon, "N of M backed up", a progress bar, and a Sync button or "Backed up".
@@ -156,6 +161,10 @@ A SwiftUI app for macOS 14+, built with SwiftPM. No Xcode project is needed; the
     skips without it. Its `needs_photos_access` tests also skip unless `TERM_PROGRAM=Apple_Terminal`.
 - The Swift tests inject an actor-based fake `CommandRunning` into `BackupStore`, and test
   `ProcessCommandRunner` with `/bin/sh` scripts.
+- `ScreenshotTests.swift` renders the README screenshots in `docs/screenshots`. It runs only when
+  `PHOTOS_BACKUP_SCREENSHOTS_FOLDER` is set (`make screenshots`). It uses a demo library (2014–2026), a demo
+  "Backup Drive" and a demo runner. Each screen is hosted in an always-active `NSWindow` with the toolbar
+  bridged and the locale set to `en_US`, then captured with `cacheDisplay`.
 - `app/test.sh` adds the command-line tools' Swift Testing framework and `lib_TestingInterop.dylib` paths when
   they're present; full Xcode finds them on its own.
 - CI (`.github/workflows/test.yml`) runs `make test` on a macOS runner.

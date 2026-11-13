@@ -129,10 +129,10 @@ struct LibraryCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(library.isFullyBackedUp ? "Everything is backed up" : "Photos Library")
                         .font(.title.bold())
-                    Text("\(library.syncedItems.formatted()) of \(library.totalItems.formatted()) photos and videos backed up")
+                    Text("\(library.syncedItems, format: .number) of \(library.totalItems, format: .number) photos and videos backed up")
                         .font(.title3)
                     if !library.isFullyBackedUp {
-                        Label("\(library.missingItems.formatted()) not backed up yet", systemImage: "icloud.and.arrow.down")
+                        Label("\(library.missingItems, format: .number) not backed up yet", systemImage: "icloud.and.arrow.down")
                             .foregroundStyle(.orange)
                     }
                 }
@@ -156,6 +156,7 @@ struct LibraryCard: View {
 }
 
 struct BackupDriveRow: View {
+    @Environment(BackupStore.self) private var store
     let backupFolder: String
 
     var body: some View {
@@ -164,10 +165,10 @@ struct BackupDriveRow: View {
                 .font(.title2)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
-                if let drive = BackupDriveInfo.read(backupFolder: backupFolder) {
+                if let drive = store.backupDrive {
                     Text(drive.volumeName).font(.headline)
                     if let freeBytes = drive.freeBytes {
-                        Text("\(freeBytes.formatted(.byteCount(style: .file))) free · \(backupFolder)")
+                        Text("\(freeBytes, format: .byteCount(style: .file)) free · \(backupFolder)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -232,7 +233,7 @@ struct PeriodHeader: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(node.level == .library ? "All photos and videos" : node.title)
                     .font(.title2.bold())
-                Text("\(node.syncedItems.formatted()) of \(node.totalItems.formatted()) backed up")
+                Text("\(node.syncedItems, format: .number) of \(node.totalItems, format: .number) backed up")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -241,6 +242,7 @@ struct PeriodHeader: View {
             }
         }
         .padding(.vertical, 10)
+        .alignmentGuide(.listRowSeparatorLeading) { header in header[.leading] }
     }
 }
 
@@ -252,14 +254,13 @@ struct PeriodRow: View {
             StatusIcon(node: node)
             VStack(alignment: .leading, spacing: 2) {
                 Text(node.title).font(.headline)
-                Text(subtitle)
+                subtitle
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            ProgressView(value: node.syncedFraction)
+            ProgressBar(fraction: node.syncedFraction)
                 .frame(width: 120)
-                .tint(node.isFullyBackedUp ? .green : .accentColor)
             if node.isFullyBackedUp {
                 Text("Backed up")
                     .font(.subheadline)
@@ -272,12 +273,14 @@ struct PeriodRow: View {
         }
         .monospacedDigit()
         .padding(.vertical, 4)
+        // Without this the list draws the separator under the last text in the row, i.e. under the Sync button.
+        .alignmentGuide(.listRowSeparatorLeading) { row in row[.leading] }
     }
 
-    private var subtitle: String {
+    private var subtitle: Text {
         node.isFullyBackedUp
-            ? "\(node.totalItems.formatted()) photos and videos"
-            : "\(node.syncedItems.formatted()) of \(node.totalItems.formatted()) backed up · \(node.missingItems.formatted()) missing"
+            ? Text("\(node.totalItems, format: .number) photos and videos")
+            : Text("\(node.syncedItems, format: .number) of \(node.totalItems, format: .number) backed up · \(node.missingItems, format: .number) missing")
     }
 }
 
@@ -300,6 +303,26 @@ struct StatusIcon: View {
     }
 }
 
+/// A thin bar: blue while in progress, green when complete.
+struct ProgressBar: View {
+    let fraction: Double
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                Capsule()
+                    .fill(fraction >= 1 ? Color.green : Color.accentColor)
+                    .frame(width: geometry.size.width * min(max(fraction, 0), 1))
+            }
+        }
+        .frame(height: 6)
+        .animation(.easeInOut, value: fraction)
+        .accessibilityElement()
+        .accessibilityValue(Text(fraction, format: .percent.precision(.fractionLength(0))))
+    }
+}
+
 struct ProgressRing: View {
     let fraction: Double
     let diameter: CGFloat
@@ -312,7 +335,7 @@ struct ProgressRing: View {
                 .trim(from: 0, to: fraction)
                 .stroke(fraction >= 1 ? Color.green : Color.accentColor, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            Text(fraction.formatted(.percent.precision(.fractionLength(0))))
+            Text(fraction, format: .percent.precision(.fractionLength(0)))
                 .font(.system(size: diameter * 0.24, weight: .semibold, design: .rounded))
                 .monospacedDigit()
         }
@@ -418,8 +441,8 @@ struct SyncingStatus: View {
                     .help("Stop after the current photo. Anything already copied stays on the drive.")
             }
             if let progress {
-                ProgressView(value: progress.fraction)
-                Text("\(progress.currentItem.formatted()) of \(progress.totalItems.formatted()) · \(progress.currentFileName)")
+                ProgressBar(fraction: progress.fraction)
+                Text("\(progress.currentItem, format: .number) of \(progress.totalItems, format: .number) · \(progress.currentFileName)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()

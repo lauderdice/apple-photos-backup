@@ -23,12 +23,24 @@ final class BackupStore {
 
     private let commandRunner: any CommandRunning
     private let saveBackupTarget: (String) -> Void
+    private let readDriveInfo: (String) -> BackupDriveInfo?
     private var syncTask: Task<Void, Never>?
 
-    init(commandRunner: any CommandRunning, backupTarget: String?, saveBackupTarget: @escaping (String) -> Void = { _ in }) {
+    init(
+        commandRunner: any CommandRunning,
+        backupTarget: String?,
+        saveBackupTarget: @escaping (String) -> Void = { _ in },
+        readDriveInfo: @escaping (String) -> BackupDriveInfo? = BackupDriveInfo.read(backupFolder:)
+    ) {
         self.commandRunner = commandRunner
         self.backupTarget = backupTarget
         self.saveBackupTarget = saveBackupTarget
+        self.readDriveInfo = readDriveInfo
+    }
+
+    /// The drive behind the backup folder, or nil when no folder is chosen or the drive is unplugged.
+    var backupDrive: BackupDriveInfo? {
+        backupTarget.flatMap(readDriveInfo)
     }
 
     var isSyncing: Bool { activeSyncTitle != nil }

@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A step-by-step user guide in the README with screenshots, a routine for keeping the backup up to date, and a
+  troubleshooting section.
+- `make screenshots` renders the README screenshots from demo data.
+
+### Changed
+
+- Progress bars are green when a period is complete and blue while in progress.
+- Numbers follow the language and region settings consistently.
+
+### Fixed
+
+- Row separators were drawn only under the Sync button instead of across the whole row.
+
 ## [0.1.0] - 2026-11-13
 
 First public release.

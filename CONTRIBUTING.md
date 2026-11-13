@@ -19,6 +19,7 @@ make install     # builds the app from the current source and installs it into /
 | `make test-e2e` | End-to-end tests (see below) |
 | `make app` | Builds `Photos Backup Tracker.app` into `~/Library/Caches/photos-backup-tracker/app` |
 | `make dmg` | Builds the app and packages the drag-to-install `.dmg` into `~/Library/Caches/photos-backup-tracker/dist` |
+| `make screenshots` | Regenerates the README screenshots in `docs/screenshots` from demo data (no real library or drive involved) |
 | `make install` / `make uninstall` | Installs the app into `/Applications`, or removes it again |
 
 The app is self-contained. `app/build.sh` embeds uv's standalone CPython, with the `photos-backup` CLI and the
@@ -100,4 +101,4 @@ that step.
 
 - Add or update tests with every change, and keep `architecture.md` in sync when modules or data flows change.
 - Use self-descriptive names and fail fast on bad input.
-- The README is written for non-technical users. Keep technical detail here and in `architecture.md`.
+- The README is written for non-technical users. Keep technical detail here and in `architecture.md`. After UI changes, run `make screenshots` and commit the updated images.
