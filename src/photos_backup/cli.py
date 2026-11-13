@@ -9,6 +9,7 @@ import logging
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 from datetime import date, datetime, timedelta
@@ -31,6 +32,8 @@ FOLDER_PER_DAY_TEMPLATE = "{created.year}/{created.mm}/{created.dd}"
 MINIMUM_FREE_BYTES_AFTER_DOWNLOAD = 20_000_000_000
 GIGABYTE = 1_000_000_000
 OSXPHOTOS_INVOCATION = [sys.executable, "-m", "osxphotos"]
+CANCELLED_EXIT_CODE = 128 + signal.SIGTERM
+SECONDS_TO_WAIT_FOR_OSXPHOTOS_TO_STOP = 30
 
 log = logging.getLogger("photos-backup")
 
@@ -107,14 +110,36 @@ def range_status(library_path: Path, date_range: DateRange) -> RangeStatus:
     return read_range_status(library_path, date_range, before_day=date_range.last_day + timedelta(days=1))
 
 
+class ExportCancelled(Exception):
+    pass
+
+
 def run_osxphotos_logging_every_line(command: list[str]) -> int:
+    """Runs osxphotos, logging its output. On SIGTERM (Cancel in the app) it stops osxphotos too."""
     osxphotos_environment = os.environ | {"OSXPHOTOS_NO_VERSION_CHECK": "1"}
     osxphotos_process = subprocess.Popen(
         command, env=osxphotos_environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
-    for line in osxphotos_process.stdout:
-        log.info(f"osxphotos | {line.rstrip()}")
-    return osxphotos_process.wait()
+
+    def stop_osxphotos(signal_number: int, frame: object) -> None:
+        raise ExportCancelled
+
+    previous_handler = signal.signal(signal.SIGTERM, stop_osxphotos)
+    try:
+        for line in osxphotos_process.stdout:
+            log.info(f"osxphotos | {line.rstrip()}")
+        return osxphotos_process.wait()
+    except ExportCancelled:
+        log.warning("Cancelled: stopping osxphotos")
+        osxphotos_process.terminate()
+        try:
+            osxphotos_process.wait(timeout=SECONDS_TO_WAIT_FOR_OSXPHOTOS_TO_STOP)
+        except subprocess.TimeoutExpired:
+            osxphotos_process.kill()
+            osxphotos_process.wait()
+        return CANCELLED_EXIT_CODE
+    finally:
+        signal.signal(signal.SIGTERM, previous_handler)
 
 
 def run_status(library_path: Path, date_range: DateRange) -> int:

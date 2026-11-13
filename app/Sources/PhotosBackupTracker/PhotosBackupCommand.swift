@@ -1,25 +1,25 @@
 import Foundation
 
 enum BackupConfiguration {
-    /// `make install` puts the app's own copy of the photos-backup CLI here.
-    static let installedCLI = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appending(path: "Photos Backup Tracker/cli/bin/photos-backup")
+    /// The Python runtime app/build.sh embeds in the app, with the photos-backup CLI installed into it.
+    static var bundledPython: URL {
+        Bundle.main.resourceURL!.appending(path: "python/bin/python3")
+    }
 
     /// UserDefaults key holding the backup folder the user picked.
     static let backupTargetDefaultsKey = "backupTargetPath"
 
-    /// Replaces the installed CLI with another executable (used by the end-to-end test).
+    /// Replaces the bundled CLI with another executable (used by tests).
     static let cliOverrideVariable = "PHOTOS_BACKUP_TRACKER_CLI"
-    /// Replaces the saved backup folder (used by the end-to-end test).
+    /// Replaces the saved backup folder (used by tests).
     static let targetOverrideVariable = "PHOTOS_BACKUP_TRACKER_TARGET"
 
     static func makeCommandRunner(environment: [String: String] = ProcessInfo.processInfo.environment) -> ProcessCommandRunner {
-        let executable = environment[cliOverrideVariable].map { URL(fileURLWithPath: $0) } ?? installedCLI
-        return ProcessCommandRunner(
-            executable: executable,
-            leadingArguments: [],
-            workingDirectory: URL(fileURLWithPath: NSHomeDirectory())
-        )
+        if let cliOverride = environment[cliOverrideVariable] {
+            return ProcessCommandRunner(executable: URL(fileURLWithPath: cliOverride), leadingArguments: [])
+        }
+        // -I keeps the embedded Python isolated from anything installed on the Mac.
+        return ProcessCommandRunner(executable: bundledPython, leadingArguments: ["-I", "-m", "photos_backup.cli"])
     }
 
     /// The backup folder to use at launch, or nil when the user hasn't picked one yet.
@@ -40,7 +40,7 @@ struct CommandResult: Equatable, Sendable {
 struct CommandNotInstalled: Error, LocalizedError {
     let executable: URL
     var errorDescription: String? {
-        "The photos-backup command line tool isn't installed at \(executable.path). Install it with `make install` from the project folder."
+        "This copy of Photos Backup Tracker is incomplete (\(executable.lastPathComponent) is missing). Please download and install it again."
     }
 }
 
@@ -48,13 +48,16 @@ struct CommandNotInstalled: Error, LocalizedError {
 protocol CommandRunning: Sendable {
     func run(_ arguments: [String]) async throws -> CommandResult
     /// Calls `onLine` for every printed line (stdout and stderr combined), in order, before returning the exit code.
+    /// Cancelling the calling task stops the command.
     func stream(_ arguments: [String], onLine: @escaping @Sendable (String) async -> Void) async throws -> Int32
 }
 
 struct ProcessCommandRunner: CommandRunning {
     let executable: URL
     let leadingArguments: [String]
-    let workingDirectory: URL?
+
+    /// The embedded runtime lives inside the signed app bundle, so it must never write bytecode caches there.
+    static let childEnvironment = ProcessInfo.processInfo.environment.merging(["PYTHONDONTWRITEBYTECODE": "1"]) { _, forced in forced }
 
     func run(_ arguments: [String]) async throws -> CommandResult {
         let process = try makeProcess(arguments)
@@ -81,19 +84,27 @@ struct ProcessCommandRunner: CommandRunning {
         process.standardError = pipe
         let exitCode = try launch(process)
 
-        var pendingLine = Data()
-        for try await byte in pipe.fileHandleForReading.bytes {
-            if byte == UInt8(ascii: "\n") {
-                await onLine(String(decoding: pendingLine, as: UTF8.self))
-                pendingLine.removeAll(keepingCapacity: true)
-            } else {
-                pendingLine.append(byte)
+        return await withTaskCancellationHandler {
+            var pendingLine = Data()
+            do {
+                for try await byte in pipe.fileHandleForReading.bytes {
+                    if byte == UInt8(ascii: "\n") {
+                        await onLine(String(decoding: pendingLine, as: UTF8.self))
+                        pendingLine.removeAll(keepingCapacity: true)
+                    } else {
+                        pendingLine.append(byte)
+                    }
+                }
+            } catch {
+                // Reading stops when the task is cancelled; the process is being terminated meanwhile.
             }
+            if !pendingLine.isEmpty {
+                await onLine(String(decoding: pendingLine, as: UTF8.self))
+            }
+            return await exitCode.value
+        } onCancel: {
+            process.terminate()
         }
-        if !pendingLine.isEmpty {
-            await onLine(String(decoding: pendingLine, as: UTF8.self))
-        }
-        return await exitCode.value
     }
 
     private func makeProcess(_ arguments: [String]) throws -> Process {
@@ -103,7 +114,8 @@ struct ProcessCommandRunner: CommandRunning {
         let process = Process()
         process.executableURL = executable
         process.arguments = leadingArguments + arguments
-        process.currentDirectoryURL = workingDirectory
+        process.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+        process.environment = Self.childEnvironment
         return process
     }
 

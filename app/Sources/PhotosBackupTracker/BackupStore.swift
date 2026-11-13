@@ -12,12 +12,18 @@ final class BackupStore {
     private(set) var nodesByID: [String: ProgressNode] = [:]
     private(set) var isLoading = false
     private(set) var loadError: String?
+
+    /// Title of the period being synced right now, e.g. "December 2016".
     private(set) var activeSyncTitle: String?
+    private(set) var syncProgress: SyncProgress?
     private(set) var syncLog: [String] = []
-    private(set) var lastSyncSummary: String?
+    /// Title and outcome of the last finished sync, until dismissed or a new sync starts.
+    private(set) var lastSyncTitle: String?
+    private(set) var lastSyncOutcome: SyncOutcome?
 
     private let commandRunner: any CommandRunning
     private let saveBackupTarget: (String) -> Void
+    private var syncTask: Task<Void, Never>?
 
     init(commandRunner: any CommandRunning, backupTarget: String?, saveBackupTarget: @escaping (String) -> Void = { _ in }) {
         self.commandRunner = commandRunner
@@ -26,6 +32,16 @@ final class BackupStore {
     }
 
     var isSyncing: Bool { activeSyncTitle != nil }
+
+    var lastSyncSummary: String? {
+        guard let lastSyncTitle, let lastSyncOutcome else { return nil }
+        switch lastSyncOutcome {
+        case .finished: return "\(lastSyncTitle): finished"
+        case .failed(let exitCode): return "\(lastSyncTitle): failed with exit code \(exitCode) — see the details"
+        case .cancelled: return "\(lastSyncTitle): cancelled"
+        case .couldNotStart(let reason): return "\(lastSyncTitle): could not start — \(reason)"
+        }
+    }
 
     /// Switches to another backup folder, remembers it, and recounts.
     func chooseBackupTarget(_ path: String) async {
@@ -64,31 +80,53 @@ final class BackupStore {
     func sync(_ node: ProgressNode) -> Task<Void, Never>? {
         guard node.canBeSynced, !isSyncing, let backupTarget else { return nil }
         activeSyncTitle = node.title
+        syncProgress = nil
         syncLog = []
-        lastSyncSummary = nil
+        lastSyncTitle = nil
+        lastSyncOutcome = nil
 
-        return Task {
+        let task = Task {
+            let outcome: SyncOutcome
             do {
                 let exitCode = try await commandRunner.stream(
                     ["export", "--from", node.firstDay, "--to", node.lastDay, backupTarget]
                 ) { line in
                     await self.appendLogLine(line)
                 }
-                lastSyncSummary = exitCode == 0
-                    ? "\(node.title): finished"
-                    : "\(node.title): failed with exit code \(exitCode) — see the log below"
+                outcome = Task.isCancelled ? .cancelled : (exitCode == 0 ? .finished : .failed(exitCode: exitCode))
             } catch {
-                lastSyncSummary = "\(node.title): could not start — \(error.localizedDescription)"
+                outcome = Task.isCancelled ? .cancelled : .couldNotStart(reason: error.localizedDescription)
             }
+            lastSyncTitle = node.title
+            lastSyncOutcome = outcome
             activeSyncTitle = nil
+            syncProgress = nil
+            syncTask = nil
             await reload()
         }
+        syncTask = task
+        return task
+    }
+
+    /// Stops the running sync. Files already copied stay on the drive; syncing again continues where it stopped.
+    func cancelSync() {
+        syncTask?.cancel()
+    }
+
+    func dismissSyncResult() {
+        guard !isSyncing else { return }
+        lastSyncTitle = nil
+        lastSyncOutcome = nil
+        syncLog = []
     }
 
     private func appendLogLine(_ line: String) {
         syncLog.append(line)
         if syncLog.count > Self.maximumLogLines {
             syncLog.removeFirst(syncLog.count - Self.maximumLogLines)
+        }
+        if let progress = SyncProgress.parse(logLine: line) {
+            syncProgress = progress
         }
     }
 }

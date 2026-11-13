@@ -28,6 +28,7 @@ struct ProgressNode: Identifiable {
 
     var missingItems: Int { totalItems - syncedItems }
     var syncedFraction: Double { totalItems == 0 ? 1 : Double(syncedItems) / Double(totalItems) }
+    var isFullyBackedUp: Bool { missingItems == 0 }
     var canBeSynced: Bool { level != .library }
 
     func indexedByID() -> [String: ProgressNode] {

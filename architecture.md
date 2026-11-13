@@ -8,9 +8,9 @@ Advanced Data Protection can stay on, because every download goes through the Ph
 
 ```
 Photos Backup Tracker.app (SwiftUI)
-   │  runs  ~/Library/Application Support/Photos Backup Tracker/cli/bin/photos-backup
+   │  runs  Contents/Resources/python/bin/python3 -I -m photos_backup.cli   (Python embedded in the app)
    │        progress TARGET              → JSON per day {day, total_items, synced_items}
-   │        export --from --to TARGET    → log lines streamed into the app
+   │        export --from --to TARGET    → log lines streamed into the app; Cancel sends SIGTERM
    ▼
 photos-backup CLI (Python)  ──reads──►  Photos library database (read-only copy, via osxphotos PhotosDB)
    │  runs  python -m osxphotos export … --download-missing --use-photokit
@@ -63,7 +63,9 @@ TARGET/photos-backup-logs/export_<from>_to_<to>.csv   osxphotos report, appended
     - runs `osxphotos export` with `--directory {created.year}/{created.mm}/{created.dd} --download-missing
       --use-photokit --update --touch-file --retry 3 --report --append --tmpdir --verbose --no-progress`,
       logging every output line;
-    - afterwards logs new, changed and gone files and the Mac's free space, then runs the disappearance check.
+    - afterwards logs new, changed and gone files and the Mac's free space, then runs the disappearance check;
+    - on SIGTERM (the app's Cancel), `run_osxphotos_logging_every_line()` stops osxphotos (terminate, then kill
+      after 30 s) and returns `CANCELLED_EXIT_CODE` (143). The drive check still runs.
   - `progress TARGET`: prints `{"days": [...]}` JSON for the app.
 
 ## macOS app: `app/`
@@ -75,35 +77,58 @@ A SwiftUI app for macOS 14+, built with SwiftPM. No Xcode project is needed; the
 - `PhotosBackupCommand.swift`
   - `CommandRunning` is the protocol for running the CLI.
   - `ProcessCommandRunner` either collects output (`run`) or streams it line by line through an async
-    callback (`stream`, with every line delivered before it returns). It fails fast with `CommandNotInstalled`
-    when the CLI is missing.
-  - `BackupConfiguration` locates the installed CLI and the saved backup folder (UserDefaults key
-    `backupTargetPath`). `PHOTOS_BACKUP_TRACKER_CLI` and `PHOTOS_BACKUP_TRACKER_TARGET` override both for tests.
+    callback (`stream`, with every line delivered before it returns). Cancelling the calling task terminates
+    the process. It sets `PYTHONDONTWRITEBYTECODE=1`, so the embedded runtime never writes into the signed
+    bundle, and fails fast with `CommandNotInstalled` when the executable is missing.
+  - `BackupConfiguration` points at the embedded Python (`-I -m photos_backup.cli`) and the saved backup
+    folder (UserDefaults key `backupTargetPath`). `PHOTOS_BACKUP_TRACKER_CLI` and
+    `PHOTOS_BACKUP_TRACKER_TARGET` override both for tests.
+- `SyncProgress.swift`
+  - `SyncProgress.parse()` reads "current of total · file name" from osxphotos's `Exporting NAME (UUID) (n/N)`
+    log lines.
+  - `SyncOutcome` describes how a sync ended: finished, failed, cancelled or couldn't start.
+  - `BackupDriveInfo` reads the backup drive's name and free space, or nil when it's unplugged.
+  - `FriendlyError` turns CLI error output into plain-language titles and advice.
 - `BackupStore.swift`: `@Observable` state, created with a `CommandRunning` and an optional backup folder.
   - `chooseBackupTarget()` saves the folder and recounts.
   - `reload()` loads the counts.
-  - `sync()` runs one export at a time, streams the log (last 2,000 lines kept), returns its `Task`, and
-    reloads the counts afterwards.
-- `Views.swift`: a NavigationStack drill-down with a folder picker shown on first launch and a "Backup Folder…"
-  toolbar button. Rows show synced, missing and a progress bar; year, month and day rows have Sync buttons. The
-  bottom panel shows the sync status and live log.
+  - `sync()` runs one export at a time, streams the log (last 2,000 lines kept) and updates `syncProgress`. It
+    returns its `Task` and reloads the counts afterwards.
+  - `cancelSync()` cancels that task. `lastSyncOutcome`/`lastSyncTitle` stay until `dismissSyncResult()`.
+- `Views.swift`
+  - The overview is a card with a progress ring, "N of M backed up", the missing count, the backup drive's
+    name and free space, and "Browse by Year".
+  - First launch shows a three-step welcome; errors show `FriendlyError` text with Try Again.
+  - Year, month and day screens have a header (ring, counts, Sync for the whole period) and rows with a status
+    icon, "N of M backed up", a progress bar, and a Sync button or "Backed up".
+  - The bottom panel shows the running sync (progress bar, current file, Cancel) or the last result, with the
+    raw log under a collapsed "Details".
 - `Info.plist`: bundle ID `io.github.photos-backup-tracker`, the Photos usage description and the icon file name.
 - `icon/render-icon.swift`: draws the 1024×1024 icon with Core Graphics. `app/build.sh` renders it, scales it into
   an `.iconset` with `sips`, converts it with `iconutil` and caches the `.icns` until the script changes.
 
 ## Build and install
 
-- `Makefile` provides `test`, `test-e2e`, `app`, `install` and `uninstall`.
-- `app/build.sh OUTPUT_FOLDER` builds the `.app` (release) and signs it with `SIGNING_IDENTITY` (ad hoc by
-  default). Ad-hoc signatures change with every build, so macOS asks for permissions again after a rebuild;
-  a real identity avoids that.
-- `scripts/install.sh` creates the CLI environment in `~/Library/Application Support/Photos Backup Tracker/cli`
-  with the Python version from `.python-version`. It installs the dependencies locked in `uv.lock`, then the
-  project itself (not editable), builds the app and copies it to `/Applications` (`INSTALL_FOLDER` overrides).
-- `scripts/uninstall.sh` removes the app, its CLI environment and its preferences, leaving the drive and the
-  Photos library untouched.
-- Swift build output goes to `~/Library/Caches/photos-backup-tracker/swift-build` (`SWIFT_SCRATCH_PATH`
-  overrides), keeping it out of the source tree.
+- `Makefile` provides `test`, `test-e2e`, `app`, `dmg`, `install` and `uninstall`.
+- `app/build.sh OUTPUT_FOLDER` builds a self-contained `.app` (release):
+  - **Embedded runtime:** it copies uv's standalone (relocatable) CPython for `.python-version`, strips its
+    test folders and `EXTERNALLY-MANAGED`, and installs the dependencies locked in `uv.lock` plus the project
+    (not editable). It precompiles everything and caches the result in `python-runtime-<fingerprint>`, keyed
+    on the Python version, `uv.lock`, `pyproject.toml` and the CLI's source. The runtime goes into
+    `Contents/Resources/python`.
+  - **Icon:** draws it, or reuses the cached `.icns`.
+  - **Signing:** signs every Mach-O in the runtime, then the bundle, with `SIGNING_IDENTITY` (ad hoc by
+    default). Ad-hoc signatures change with every build, so macOS asks for permissions again after an update;
+    a real identity avoids that.
+- `scripts/package-dmg.sh [OUTPUT_FOLDER]` builds the app and wraps it, next to an `Applications` link, in a
+  compressed `Photos-Backup-Tracker-<version>-<arch>.dmg`. The version comes from `Info.plist`.
+- `scripts/install.sh` builds the app and copies it to `/Applications` (`INSTALL_FOLDER` overrides). It also
+  removes the separate CLI copy that earlier development builds kept in Application Support.
+- `scripts/uninstall.sh` removes the app and its preferences, leaving the drive and the Photos library untouched.
+- All build output goes to `~/Library/Caches/photos-backup-tracker` (`SWIFT_SCRATCH_PATH` overrides the Swift
+  part), keeping it out of the source tree.
+- Releases are GitHub releases with the `.dmg` attached (see CONTRIBUTING.md). The app runs on Apple silicon
+  only, because the embedded runtime is arm64.
 
 ## Tests
 
@@ -121,11 +146,12 @@ A SwiftUI app for macOS 14+, built with SwiftPM. No Xcode project is needed; the
   - `write_export_database()` builds genuine export databases with osxphotos's `ExportDB`.
 - The integration tests run `cli.main()` with `cli.OSXPHOTOS_INVOCATION` pointed at
   `tests/integration/fake_osxphotos.py`. The fake's behaviour comes from `$FAKE_OSXPHOTOS_SCENARIO`: export,
-  nothing, delete-existing, modify-existing or fail.
+  nothing, delete-existing, modify-existing, fail, or slow (used to test SIGTERM cancelling).
 - The contract tests check the installed osxphotos's `export --help`, its template fields and the `ExportDB` schema.
 - The end-to-end tests:
   - `test_tracker_app.py` builds the app from the current source into a temp folder and launches it against
-    a fake CLI;
+    a fake CLI. It also checks that the embedded Python runs the CLI with an empty environment and resolves
+    everything inside the bundle;
   - `test_real_backup.py` runs against the real library and the folder in `PHOTOS_BACKUP_E2E_TARGET`, and
     skips without it. Its `needs_photos_access` tests also skip unless `TERM_PROGRAM=Apple_Terminal`.
 - The Swift tests inject an actor-based fake `CommandRunning` into `BackupStore`, and test

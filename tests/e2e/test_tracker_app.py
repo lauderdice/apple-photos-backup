@@ -69,3 +69,33 @@ def test_app_launches_and_asks_the_cli_for_progress_of_the_configured_folder(app
         app.wait(timeout=10)
 
     assert calls == [f"progress {fake_target}"]
+
+
+def test_embedded_python_runs_the_cli_with_nothing_else_installed(app_executable: Path):
+    embedded_python = app_executable.parents[1] / "Resources" / "python" / "bin" / "python3"
+
+    completed = subprocess.run(
+        [str(embedded_python), "-I", "-m", "photos_backup.cli", "--help"],
+        env={"HOME": str(Path.home()), "PATH": "/usr/bin:/bin", "PYTHONDONTWRITEBYTECODE": "1"},
+        capture_output=True,
+        text=True,
+        cwd="/",
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "usage: photos-backup" in completed.stdout
+
+
+def test_embedded_python_has_osxphotos_and_no_paths_to_the_build_machine(app_executable: Path):
+    embedded_python = app_executable.parents[1] / "Resources" / "python" / "bin" / "python3"
+
+    completed = subprocess.run(
+        [str(embedded_python), "-I", "-c", "import sys, osxphotos, photos_backup; print(sys.prefix); print(photos_backup.__file__)"],
+        env={"HOME": str(Path.home()), "PATH": "/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    bundle_resources = str(app_executable.parents[1] / "Resources")
+    assert all(line.startswith(bundle_resources) for line in completed.stdout.splitlines())

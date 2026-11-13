@@ -7,6 +7,7 @@ $FAKE_OSXPHOTOS_ARGUMENTS_FILE so tests can inspect them.
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 
@@ -38,6 +39,11 @@ def main() -> int:
         return 0
     if scenario == "modify-existing":
         first_existing_photo(export_folder).write_bytes(b"a re-exported, edited version")
+        return 0
+    if scenario == "slow":
+        print("Exporting IMG_0001.HEIC (1/9)", flush=True)
+        Path(os.environ["FAKE_OSXPHOTOS_PID_FILE"]).write_text(str(os.getpid()))
+        time.sleep(60)
         return 0
     if scenario == "fail":
         print("Error: could not get authorization to access Photos library", file=sys.stderr)

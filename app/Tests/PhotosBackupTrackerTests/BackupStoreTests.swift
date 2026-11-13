@@ -14,6 +14,7 @@ private actor FakeCommandRunner: CommandRunning {
     private var exportExitCode: Int32 = 0
     private var exportLaunchFails = false
     private var holdsExportsOpen = false
+    private var waitsForCancellationAfterLines = false
     private var exportGate: CheckedContinuation<Void, Never>?
 
     var exportCalls: [[String]] { calls.filter { $0.first == "export" } }
@@ -28,6 +29,9 @@ private actor FakeCommandRunner: CommandRunning {
         if exportLaunchFails { throw LaunchFailure() }
         if holdsExportsOpen { await withCheckedContinuation { exportGate = $0 } }
         for line in exportLines { await onLine(line) }
+        if waitsForCancellationAfterLines {
+            do { try await Task.sleep(for: .seconds(60)) } catch { return 143 }
+        }
         return exportExitCode
     }
 
@@ -35,6 +39,7 @@ private actor FakeCommandRunner: CommandRunning {
     func answerExport(lines: [String], exitCode: Int32 = 0) { exportLines = lines; exportExitCode = exitCode }
     func failExportLaunches() { exportLaunchFails = true }
     func holdExportsOpen() { holdsExportsOpen = true }
+    func waitForCancellationAfterLines() { waitsForCancellationAfterLines = true }
     func releaseExport() { exportGate?.resume(); exportGate = nil }
 }
 
@@ -275,5 +280,74 @@ struct BackupStoreTests {
         #expect(store.syncLog.count == BackupStore.maximumLogLines)
         #expect(store.syncLog.first == "line 51")
         #expect(store.syncLog.last == "line \(BackupStore.maximumLogLines + 50)")
+    }
+}
+
+@MainActor
+@Suite("Backup store: progress and cancelling")
+struct BackupStoreSyncLifecycleTests {
+    private let runner = FakeCommandRunner()
+    private let store: BackupStore
+
+    init() {
+        store = BackupStore(commandRunner: runner, backupTarget: target)
+    }
+
+    private func loadAndFind(_ id: String) async throws -> ProgressNode {
+        await runner.answerProgress(successfulProgress([("2016-12-24", 630, 0)]))
+        await store.reload()
+        return try #require(store.nodesByID[id])
+    }
+
+    @Test func progressFollowsTheExportingLinesWhileSyncing() async throws {
+        let day = try await loadAndFind("2016-12-24")
+        await runner.answerExport(lines: [
+            "2026-11-09 19:45:14,466 INFO    osxphotos | Exporting IMG_0559.JPG (57BB5311.jpeg) (40/630)",
+            "2026-11-09 19:45:16,015 INFO    osxphotos | Exporting IMG_0561.PNG (A1C64566.png) (42/630)",
+        ])
+        await runner.waitForCancellationAfterLines()
+
+        let syncing = try #require(store.sync(day))
+        while store.syncProgress?.currentItem != 42 { await Task.yield() }
+
+        #expect(store.syncProgress == SyncProgress(currentItem: 42, totalItems: 630, currentFileName: "IMG_0561.PNG"))
+        store.cancelSync()
+        await syncing.value
+        #expect(store.syncProgress == nil)
+    }
+
+    @Test func cancellingStopsTheSyncAndSaysSo() async throws {
+        let day = try await loadAndFind("2016-12-24")
+        await runner.waitForCancellationAfterLines()
+
+        let syncing = try #require(store.sync(day))
+        while await runner.exportCalls.isEmpty { await Task.yield() }
+        store.cancelSync()
+        await syncing.value
+
+        #expect(store.lastSyncOutcome == .cancelled)
+        #expect(store.lastSyncSummary == "\(day.title): cancelled")
+        #expect(store.isSyncing == false)
+        #expect(await runner.calls.map(\.first) == ["progress", "export", "progress"])
+    }
+
+    @Test func cancelWithoutASyncDoesNothing() {
+        store.cancelSync()
+        #expect(store.isSyncing == false)
+        #expect(store.lastSyncOutcome == nil)
+    }
+
+    @Test func finishedSyncIsReportedUntilDismissed() async throws {
+        let day = try await loadAndFind("2016-12-24")
+        await runner.answerExport(lines: ["done"])
+
+        try await #require(store.sync(day)).value
+        #expect(store.lastSyncOutcome == .finished)
+        #expect(store.lastSyncTitle == day.title)
+
+        store.dismissSyncResult()
+        #expect(store.lastSyncOutcome == nil)
+        #expect(store.lastSyncTitle == nil)
+        #expect(store.syncLog.isEmpty)
     }
 }

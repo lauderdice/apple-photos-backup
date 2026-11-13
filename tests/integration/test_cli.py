@@ -1,7 +1,11 @@
 """The CLI end to end, with a fake Photos library, a fake drive and a fake osxphotos process."""
 
 import json
+import os
+import signal
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -224,3 +228,32 @@ class TestProgress:
 
         with pytest.raises(SystemExit, match="Drive is not connected"):
             run_cli("--library", str(fake_library), "progress", str(fake_volumes_root / "Gone" / "Photos"))
+
+
+class TestCancelling:
+    def test_sigterm_stops_osxphotos_logs_it_and_still_checks_the_drive(
+        self, fake_library, backup_target, fake_osxphotos, tmp_path, monkeypatch
+    ):
+        pid_file = tmp_path / "osxphotos.pid"
+        monkeypatch.setenv("FAKE_OSXPHOTOS_PID_FILE", str(pid_file))
+        fake_osxphotos.use_scenario("slow")
+
+        def cancel_once_osxphotos_is_running():
+            deadline = time.monotonic() + 20
+            while not pid_file.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        threading.Thread(target=cancel_once_osxphotos_is_running, daemon=True).start()
+        started = time.monotonic()
+
+        exit_code = export_one_day(fake_library, backup_target)
+
+        assert exit_code == cli.CANCELLED_EXIT_CODE
+        assert time.monotonic() - started < 15
+        osxphotos_pid = int(pid_file.read_text())
+        with pytest.raises(ProcessLookupError):
+            os.kill(osxphotos_pid, 0)
+        log = only_log_file(backup_target)
+        assert "Cancelled: stopping osxphotos" in log
+        assert "Check passed" in log
