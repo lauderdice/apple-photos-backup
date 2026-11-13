@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-13
+
 ### Added
 
 - A step-by-step user guide in the README with screenshots, a routine for keeping the backup up to date, and a
