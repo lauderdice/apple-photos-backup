@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Hidden photos showed up as "missing" forever: Photos never hands them to other apps. They're now counted
+  separately ("N hidden photos aren't included"), skipped by the export, and left out of the free-space check.
+- "Shared with You" items that were never saved to the library counted as missing, although the export (rightly)
+  skips them. Counts now follow exactly what the export writes.
+
 ## [0.1.1] - 2026-11-13
 
 ### Added

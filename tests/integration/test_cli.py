@@ -211,8 +211,8 @@ class TestProgress:
 
         assert json.loads(capsys.readouterr().out) == {
             "days": [
-                {"day": "2026-02-14", "total_items": 1, "synced_items": 1},
-                {"day": "2026-03-20", "total_items": 1, "synced_items": 0},
+                {"day": "2026-02-14", "total_items": 1, "synced_items": 1, "hidden_items": 0},
+                {"day": "2026-03-20", "total_items": 1, "synced_items": 0, "hidden_items": 0},
             ]
         }
 
@@ -221,7 +221,7 @@ class TestProgress:
 
         run_cli("--library", str(fake_library), "progress", str(backup_target))
 
-        assert json.loads(capsys.readouterr().out)["days"] == [{"day": "2026-02-14", "total_items": 1, "synced_items": 0}]
+        assert json.loads(capsys.readouterr().out)["days"] == [{"day": "2026-02-14", "total_items": 1, "synced_items": 0, "hidden_items": 0}]
 
     def test_disconnected_drive_is_reported(self, fake_library, fake_volumes_root, monkeypatch):
         monkeypatch.setattr(Path, "is_mount", lambda path: False)

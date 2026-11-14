@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from photos_backup.library import DateRange, including_every_burst_frame, read_range_status
+from photos_backup.library import DateRange, including_every_burst_frame, read_range_status, select_for_backup
 from tests.conftest import FakePhotosDB, burst_taken, photo_taken
 
 
@@ -90,3 +90,52 @@ class TestReadRangeStatusWithBursts:
         assert status.item_count == 6
         assert status.items_only_in_icloud == 6
         assert status.bytes_to_download == 1_000 + 5 * 2_000
+
+
+class TestSelectForBackup:
+    def test_ordinary_photos_are_backed_up(self):
+        selection = select_for_backup([photo_taken("a", 2017, 4, 15)])
+
+        assert [photo.uuid for photo in selection.photos] == ["a"]
+        assert selection.hidden_photos == []
+
+    def test_hidden_photos_are_set_apart(self):
+        """Regression: Photos never hands hidden items to other apps, so they used to show as missing forever."""
+        selection = select_for_backup([photo_taken("visible", 2017, 1, 7), photo_taken("hidden", 2017, 1, 7, hidden=True)])
+
+        assert [photo.uuid for photo in selection.photos] == ["visible"]
+        assert [photo.uuid for photo in selection.hidden_photos] == ["hidden"]
+
+    def test_shared_with_you_items_never_saved_to_the_library_are_left_out(self):
+        """Regression: osxphotos export skips these, so they used to show as missing forever."""
+        selection = select_for_backup([photo_taken("from-messages", 2017, 4, 15, syndicated=True)])
+
+        assert selection.photos == []
+        assert selection.hidden_photos == []
+
+    def test_shared_with_you_items_saved_to_the_library_are_backed_up(self):
+        selection = select_for_backup([photo_taken("saved", 2017, 4, 15, syndicated=True, saved_to_library=True)])
+
+        assert [photo.uuid for photo in selection.photos] == ["saved"]
+
+    def test_shared_with_you_items_with_a_local_file_are_backed_up(self):
+        selection = select_for_backup([photo_taken("local", 2017, 4, 15, syndicated=True, path="/Photos/local.jpg")])
+
+        assert [photo.uuid for photo in selection.photos] == ["local"]
+
+
+class TestReadRangeStatusWithHiddenAndSharedItems:
+    def test_hidden_items_are_reported_but_not_counted_or_sized(self, fake_library: Path):
+        FakePhotosDB.photos_in_library = [
+            photo_taken("normal", 2017, 1, 7, original_filesize=1_000),
+            photo_taken("hidden", 2017, 1, 7, hidden=True, original_filesize=9_000),
+            photo_taken("from-messages", 2017, 1, 7, syndicated=True, original_filesize=7_000),
+        ]
+
+        status = read_range_status(
+            fake_library, DateRange(date(2017, 1, 1), date(2017, 12, 31)), before_day=date(2018, 1, 1)
+        )
+
+        assert status.item_count == 1
+        assert status.bytes_to_download == 1_000
+        assert status.hidden_item_count == 1

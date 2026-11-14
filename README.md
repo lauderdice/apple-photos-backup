@@ -202,6 +202,16 @@ change files.
 **Do I have to back up everything at once?**
 No. Back up whatever you like, whenever you like. The app always shows what's still missing.
 
+**Why aren't my hidden photos backed up?**
+Photos keeps the **Hidden** album locked, and doesn't hand those photos to any other app, this one included. The app
+shows how many there are, for example *"51 hidden photos aren't included"*, and doesn't count them as missing. To
+back them up, open the **Hidden** album in Photos, select the photos, choose **Image → Unhide Photo**, click **Sync** in
+Photos Backup Tracker, then hide them again. Once they're on the drive they stay there.
+
+**What about photos people sent me in Messages?**
+Photos shows them under **Shared with You**, but they only become part of your library when you save them
+(**Add to Library**). Saved ones are backed up like any other photo; unsaved ones aren't counted.
+
 **Can I use the same drive for other things?**
 Yes. The app only works inside the folder you chose.
 

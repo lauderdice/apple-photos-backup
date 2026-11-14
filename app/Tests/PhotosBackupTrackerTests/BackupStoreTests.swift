@@ -44,7 +44,7 @@ private actor FakeCommandRunner: CommandRunning {
 }
 
 private func progressJSON(_ days: [(String, Int, Int)]) -> Data {
-    let entries = days.map { #"{"day": "\#($0.0)", "total_items": \#($0.1), "synced_items": \#($0.2)}"# }
+    let entries = days.map { #"{"day": "\#($0.0)", "total_items": \#($0.1), "synced_items": \#($0.2), "hidden_items": 0}"# }
     return Data(#"{"days": [\#(entries.joined(separator: ","))]}"#.utf8)
 }
 

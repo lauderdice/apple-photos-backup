@@ -84,6 +84,8 @@ def build_export_command(library_path: Path, date_range: DateRange, target: Path
         "--directory", FOLDER_PER_DAY_TEMPLATE,
         "--download-missing",
         "--use-photokit",
+        # Photos never gives hidden items to other apps, so asking for them only produces "missing" errors.
+        "--not-hidden",
         "--update",
         "--touch-file",
         "--retry", "3",
@@ -103,6 +105,8 @@ def log_range_status(date_range: DateRange, status: RangeStatus) -> None:
     log.info(f"Date range:       {date_range.first_day} to {date_range.last_day} (inclusive)")
     log.info(f"Photos & videos:  {status.item_count}")
     log.info(f"Only in iCloud:   {status.items_only_in_icloud} ({status.bytes_to_download / GIGABYTE:.2f} GB to download)")
+    if status.hidden_item_count:
+        log.info(f"Hidden (skipped): {status.hidden_item_count} (unhide them in Photos to back them up)")
     log.info(f"Free on this Mac: {status.library_volume_free_bytes / GIGABYTE:.2f} GB")
 
 

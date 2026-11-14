@@ -40,14 +40,22 @@ TARGET/photos-backup-logs/export_<from>_to_<to>.csv   osxphotos report, appended
 
 - `library.py`
   - `including_every_burst_frame()` adds the frames hidden behind each burst's key photo. `PhotosDB.photos()` lists
-    only the key photo, but osxphotos export writes every frame, so every count and size estimate goes through it.
+    only the key photo, but osxphotos export writes every frame.
+  - `select_for_backup()` returns a `BackupSelection`: every count and size estimate goes through it, so the app
+    and `status` count exactly what the export writes.
+    - It expands bursts and drops "Shared with You" items that were never saved to the library and have no
+      local file (`is_written_by_osxphotos_export()`, the same rule as osxphotos's `cli/export.py`).
+    - It sets hidden photos apart. PhotoKit never returns hidden assets to other apps, even with
+      `includeHiddenAssets`, so they can't be exported while hidden.
   - `DateRange` holds an inclusive first/last day and is validated on creation.
-  - `RangeStatus` holds item count, iCloud-only count, bytes to download, and free space on the library volume.
+  - `RangeStatus` holds item count, iCloud-only count, bytes to download (hidden photos excluded), the hidden
+    count, and free space on the library volume.
   - `read_range_status()` computes it.
 - `progress.py`
   - `read_synced_uuids()` copies `.osxphotos_export.db` (and its `-wal`/`-shm`) to a temp folder, so a
     running export is never disturbed. It returns the UUIDs whose exported file still exists on the drive.
-  - `compute_day_progress()` counts library items and synced items per day, using each photo's own date.
+  - `compute_day_progress()` counts total, synced and hidden items per day, using each photo's own date. A
+    hidden photo that is already on the drive counts as synced, not hidden.
 - `safeguards.py`
   - `FORBIDDEN_OSXPHOTOS_OPTIONS` blocklists options that delete or overwrite on the drive or change the
     library. `require_only_safe_options()` refuses any command containing one.
@@ -61,12 +69,12 @@ TARGET/photos-backup-logs/export_<from>_to_<to>.csv   osxphotos report, appended
     - requires a connected drive under `/Volumes` and enough room on the Mac;
     - opens a timestamped log on the drive (console and file);
     - runs `osxphotos export` with `--directory {created.year}/{created.mm}/{created.dd} --download-missing
-      --use-photokit --update --touch-file --retry 3 --report --append --tmpdir --verbose --no-progress`,
+      --use-photokit --not-hidden --update --touch-file --retry 3 --report --append --tmpdir --verbose --no-progress`,
       logging every output line;
     - afterwards logs new, changed and gone files and the Mac's free space, then runs the disappearance check;
     - on SIGTERM (the app's Cancel), `run_osxphotos_logging_every_line()` stops osxphotos (terminate, then kill
       after 30 s) and returns `CANCELLED_EXIT_CODE` (143). The drive check still runs.
-  - `progress TARGET`: prints `{"days": [...]}` JSON for the app.
+  - `progress TARGET`: prints `{"days": [{day, total_items, synced_items, hidden_items}, ...]}` JSON for the app.
 
 ## macOS app: `app/`
 
@@ -96,6 +104,8 @@ A SwiftUI app for macOS 14+, built with SwiftPM. No Xcode project is needed; the
     returns its `Task` and reloads the counts afterwards.
   - `cancelSync()` cancels that task. `lastSyncOutcome`/`lastSyncTitle` stay until `dismissSyncResult()`.
 - `Views.swift`
+  - `HiddenPhotosNote` (overview and period headers) says how many hidden photos aren't included and how to
+    back them up; hidden photos never count as missing.
   - The overview is a card with a progress ring, "N of M backed up", the missing count, the backup drive's
     name and free space (`store.backupDrive`, injectable through the store's `readDriveInfo`), and "Browse by Year".
   - Numbers are formatted with `Text(…, format:)` interpolations, so they follow the SwiftUI `\.locale`. The

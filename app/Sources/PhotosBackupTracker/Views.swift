@@ -135,6 +135,7 @@ struct LibraryCard: View {
                         Label("\(library.missingItems, format: .number) not backed up yet", systemImage: "icloud.and.arrow.down")
                             .foregroundStyle(.orange)
                     }
+                    HiddenPhotosNote(hiddenItems: library.hiddenItems)
                 }
                 Spacer(minLength: 0)
             }
@@ -235,6 +236,7 @@ struct PeriodHeader: View {
                     .font(.title2.bold())
                 Text("\(node.syncedItems, format: .number) of \(node.totalItems, format: .number) backed up")
                     .foregroundStyle(.secondary)
+                HiddenPhotosNote(hiddenItems: node.hiddenItems)
             }
             Spacer()
             if node.canBeSynced {
@@ -281,6 +283,23 @@ struct PeriodRow: View {
         node.isFullyBackedUp
             ? Text("\(node.totalItems, format: .number) photos and videos")
             : Text("\(node.syncedItems, format: .number) of \(node.totalItems, format: .number) backed up · \(node.missingItems, format: .number) missing")
+    }
+}
+
+/// Explains why hidden photos aren't counted: Photos never hands them to other apps.
+struct HiddenPhotosNote: View {
+    let hiddenItems: Int
+
+    var body: some View {
+        if hiddenItems > 0 {
+            Label(
+                hiddenItems == 1 ? "1 hidden photo isn't included" : "\(hiddenItems, format: .number) hidden photos aren't included",
+                systemImage: "eye.slash"
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .help("Photos keeps hidden photos locked away from other apps. To back them up, unhide them in Photos, sync, then hide them again.")
+        }
     }
 }
 

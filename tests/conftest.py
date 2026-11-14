@@ -21,6 +21,10 @@ class FakePhoto:
     original_filesize: int = 1_000_000
     burst: bool = False
     burst_photos: list["FakePhoto"] = field(default_factory=list)
+    hidden: bool = False
+    syndicated: bool = False
+    saved_to_library: bool = False
+    path: str | None = None
 
 
 class FakePhotosDB:

@@ -35,7 +35,7 @@ def write_fake_cli(folder: Path, calls_file: Path) -> Path:
         "#!/bin/sh\n"
         f'printf "%s\\n" "$*" >> "{calls_file}"\n'
         'if [ "$1" = progress ]; then\n'
-        '  echo \'{"days": [{"day": "2026-02-14", "total_items": 2, "synced_items": 2}]}\'\n'
+        '  echo \'{"days": [{"day": "2026-02-14", "total_items": 2, "synced_items": 2, "hidden_items": 0}]}\'\n'
         "fi\n"
     )
     fake_cli.chmod(fake_cli.stat().st_mode | stat.S_IXUSR)

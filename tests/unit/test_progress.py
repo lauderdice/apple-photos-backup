@@ -53,8 +53,8 @@ class TestComputeDayProgress:
         progress = compute_day_progress(fake_library, export_folder)
 
         assert progress == [
-            DayProgress(day=date(2026, 1, 1), total_items=1, synced_items=0),
-            DayProgress(day=date(2026, 2, 14), total_items=2, synced_items=1),
+            DayProgress(day=date(2026, 1, 1), total_items=1, synced_items=0, hidden_items=0),
+            DayProgress(day=date(2026, 2, 14), total_items=2, synced_items=1, hidden_items=0),
         ]
 
     def test_every_burst_frame_counts_toward_its_day(self, fake_library: Path, tmp_path: Path):
@@ -65,7 +65,31 @@ class TestComputeDayProgress:
         write_export_database(export_folder, {"2016/12/24/frame.JPG": "burst-frame-1"})
 
         assert compute_day_progress(fake_library, export_folder) == [
-            DayProgress(day=date(2016, 12, 24), total_items=4, synced_items=1)
+            DayProgress(day=date(2016, 12, 24), total_items=4, synced_items=1, hidden_items=0)
+        ]
+
+    def test_hidden_items_are_counted_apart_and_shared_with_you_items_are_left_out(self, fake_library: Path, tmp_path: Path):
+        """Regression: a fully synced 2017 kept showing hidden photos and Messages photos as missing."""
+        export_folder = tmp_path / "Photos Library"
+        FakePhotosDB.photos_in_library = [
+            photo_taken("synced", 2017, 4, 15),
+            photo_taken("hidden", 2017, 4, 15, hidden=True),
+            photo_taken("hidden-before-it-was-backed-up", 2017, 4, 15, hidden=True),
+            photo_taken("from-messages", 2017, 4, 15, syndicated=True),
+        ]
+        create_exported_file(export_folder, "2017/04/15/a.JPG")
+        create_exported_file(export_folder, "2017/04/15/b.JPG")
+        write_export_database(export_folder, {"2017/04/15/a.JPG": "synced", "2017/04/15/b.JPG": "hidden-before-it-was-backed-up"})
+
+        assert compute_day_progress(fake_library, export_folder) == [
+            DayProgress(day=date(2017, 4, 15), total_items=2, synced_items=2, hidden_items=1)
+        ]
+
+    def test_a_day_with_only_hidden_items_is_still_listed(self, fake_library: Path, tmp_path: Path):
+        FakePhotosDB.photos_in_library = [photo_taken("hidden", 2017, 1, 7, hidden=True)]
+
+        assert compute_day_progress(fake_library, tmp_path / "Photos Library") == [
+            DayProgress(day=date(2017, 1, 7), total_items=0, synced_items=0, hidden_items=1)
         ]
 
     def test_empty_library_has_no_days(self, fake_library: Path, tmp_path: Path):
@@ -78,13 +102,14 @@ class TestComputeDayProgress:
         write_export_database(export_folder, {"old.jpg": "deleted-from-photos"})
 
         assert compute_day_progress(fake_library, export_folder) == [
-            DayProgress(day=date(2026, 2, 14), total_items=1, synced_items=0)
+            DayProgress(day=date(2026, 2, 14), total_items=1, synced_items=0, hidden_items=0)
         ]
 
 
 def test_day_progress_serialises_to_json_friendly_dict():
-    assert DayProgress(day=date(2026, 2, 14), total_items=2, synced_items=1).as_json() == {
+    assert DayProgress(day=date(2026, 2, 14), total_items=2, synced_items=1, hidden_items=0).as_json() == {
         "day": "2026-02-14",
         "total_items": 2,
         "synced_items": 1,
+        "hidden_items": 0,
     }

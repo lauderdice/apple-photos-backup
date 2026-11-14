@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import PhotosBackupTracker
 
-private func day(_ isoDay: String, total: Int, synced: Int) -> DayProgress {
-    DayProgress(day: isoDay, totalItems: total, syncedItems: synced)
+private func day(_ isoDay: String, total: Int, synced: Int, hidden: Int = 0) -> DayProgress {
+    DayProgress(day: isoDay, totalItems: total, syncedItems: synced, hiddenItems: hidden)
 }
 
 private let sampleDays = [
@@ -100,13 +100,37 @@ struct ProgressTreeTests {
     }
 
     @Test func decodesTheCLIsSnakeCaseJSON() throws {
-        let json = Data(#"{"days": [{"day": "2026-02-14", "total_items": 2, "synced_items": 1}]}"#.utf8)
+        let json = Data(#"{"days": [{"day": "2026-02-14", "total_items": 2, "synced_items": 1, "hidden_items": 3}]}"#.utf8)
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
 
         let report = try decoder.decode(ProgressReport.self, from: json)
 
         #expect(report.days.count == 1)
-        #expect((report.days[0].day, report.days[0].totalItems, report.days[0].syncedItems) == ("2026-02-14", 2, 1))
+        #expect((report.days[0].day, report.days[0].totalItems, report.days[0].syncedItems, report.days[0].hiddenItems) == ("2026-02-14", 2, 1, 3))
+    }
+}
+
+@Suite("Hidden photos in the progress tree")
+struct HiddenPhotosInTreeTests {
+    let library = ProgressTreeBuilder.buildLibrary(from: [
+        day("2017-01-07", total: 10, synced: 10, hidden: 2),
+        day("2017-04-14", total: 5, synced: 5, hidden: 30),
+        day("2018-03-01", total: 4, synced: 0),
+    ])
+
+    @Test func hiddenCountsAddUpPerMonthYearAndLibrary() throws {
+        let index = library.indexedByID()
+        #expect(try #require(index["2017-01"]).hiddenItems == 2)
+        #expect(try #require(index["2017"]).hiddenItems == 32)
+        #expect(library.hiddenItems == 32)
+        #expect(try #require(index["2018"]).hiddenItems == 0)
+    }
+
+    @Test func hiddenPhotosDontKeepAPeriodFromBeingBackedUp() throws {
+        let year2017 = try #require(library.indexedByID()["2017"])
+        #expect(year2017.isFullyBackedUp)
+        #expect(year2017.missingItems == 0)
+        #expect(year2017.syncedFraction == 1)
     }
 }

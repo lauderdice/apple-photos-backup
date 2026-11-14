@@ -41,7 +41,7 @@ class TestBuildExportCommand:
     def test_downloads_from_icloud_through_photokit_incrementally(self):
         command = export_command(date(2026, 2, 14), date(2026, 2, 14))
 
-        for option in ["--download-missing", "--use-photokit", "--update", "--touch-file", "--verbose", "--no-progress"]:
+        for option in ["--download-missing", "--use-photokit", "--not-hidden", "--update", "--touch-file", "--verbose", "--no-progress"]:
             assert option in command
 
     def test_stages_downloads_and_reports_on_the_backup_drive(self):
@@ -92,6 +92,7 @@ class TestRequireRoomToDownload:
             items_only_in_icloud=1,
             bytes_to_download=bytes_to_download,
             library_volume_free_bytes=free_bytes,
+            hidden_item_count=0,
         )
 
     def test_enough_room_passes(self):

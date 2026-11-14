@@ -27,7 +27,8 @@ private func demoProgressJSON() -> Data {
                 case (2017, ...5): synced = total
                 default: synced = 0
                 }
-                entries.append(String(format: #"{"day": "%04d-%02d-%02d", "total_items": %d, "synced_items": %d}"#, year, month, day, total, synced))
+                let hidden = (year == 2016 && month % 4 == 3 && position == 4) ? 2 : 0
+                entries.append(String(format: #"{"day": "%04d-%02d-%02d", "total_items": %d, "synced_items": %d, "hidden_items": %d}"#, year, month, day, total, synced, hidden))
             }
         }
     }

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import osxphotos
 
-from photos_backup.library import including_every_burst_frame
+from photos_backup.library import select_for_backup
 
 EXPORT_DATABASE_NAME = ".osxphotos_export.db"
 SQLITE_SIDECAR_SUFFIXES = ("-wal", "-shm")
@@ -21,6 +21,7 @@ class DayProgress:
     day: date
     total_items: int
     synced_items: int
+    hidden_items: int
 
     def as_json(self) -> dict:
         return asdict(self) | {"day": self.day.isoformat()}
@@ -55,16 +56,29 @@ def read_synced_uuids(export_folder: Path) -> set[str]:
 def compute_day_progress(library_path: Path, export_folder: Path) -> list[DayProgress]:
     photos_db = osxphotos.PhotosDB(dbfile=str(library_path))
     synced_uuids = read_synced_uuids(export_folder)
+    selection = select_for_backup(photos_db.photos())
 
     total_by_day: Counter[date] = Counter()
     synced_by_day: Counter[date] = Counter()
-    for photo in including_every_burst_frame(photos_db.photos()):
-        photo_day = photo.date.date()
-        total_by_day[photo_day] += 1
+    hidden_by_day: Counter[date] = Counter()
+    for photo in selection.photos:
+        total_by_day[photo.date.date()] += 1
         if photo.uuid in synced_uuids:
-            synced_by_day[photo_day] += 1
+            synced_by_day[photo.date.date()] += 1
+    for hidden_photo in selection.hidden_photos:
+        # A photo backed up before it was hidden is on the drive, so it still counts as backed up.
+        if hidden_photo.uuid in synced_uuids:
+            total_by_day[hidden_photo.date.date()] += 1
+            synced_by_day[hidden_photo.date.date()] += 1
+        else:
+            hidden_by_day[hidden_photo.date.date()] += 1
 
     return [
-        DayProgress(day=day, total_items=total_by_day[day], synced_items=synced_by_day[day])
-        for day in sorted(total_by_day)
+        DayProgress(
+            day=day,
+            total_items=total_by_day[day],
+            synced_items=synced_by_day[day],
+            hidden_items=hidden_by_day[day],
+        )
+        for day in sorted(total_by_day.keys() | hidden_by_day.keys())
     ]

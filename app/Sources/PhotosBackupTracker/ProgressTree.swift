@@ -5,6 +5,8 @@ struct DayProgress: Decodable {
     let day: String
     let totalItems: Int
     let syncedItems: Int
+    /// Hidden photos not on the drive: Photos never hands them to other apps, so they can't be backed up while hidden.
+    let hiddenItems: Int
 }
 
 struct ProgressReport: Decodable {
@@ -24,6 +26,7 @@ struct ProgressNode: Identifiable {
     let lastDay: String
     let syncedItems: Int
     let totalItems: Int
+    let hiddenItems: Int
     let children: [ProgressNode]
 
     var missingItems: Int { totalItems - syncedItems }
@@ -55,6 +58,7 @@ enum ProgressTreeBuilder {
             lastDay: days.map(\.day).max() ?? "",
             syncedItems: yearNodes.reduce(0) { $0 + $1.syncedItems },
             totalItems: yearNodes.reduce(0) { $0 + $1.totalItems },
+            hiddenItems: yearNodes.reduce(0) { $0 + $1.hiddenItems },
             children: yearNodes
         )
     }
@@ -71,6 +75,7 @@ enum ProgressTreeBuilder {
             lastDay: "\(year)-12-31",
             syncedItems: monthNodes.reduce(0) { $0 + $1.syncedItems },
             totalItems: monthNodes.reduce(0) { $0 + $1.totalItems },
+            hiddenItems: monthNodes.reduce(0) { $0 + $1.hiddenItems },
             children: monthNodes
         )
     }
@@ -87,6 +92,7 @@ enum ProgressTreeBuilder {
             lastDay: "\(month)-\(String(format: "%02d", daysInMonth))",
             syncedItems: dayNodes.reduce(0) { $0 + $1.syncedItems },
             totalItems: dayNodes.reduce(0) { $0 + $1.totalItems },
+            hiddenItems: dayNodes.reduce(0) { $0 + $1.hiddenItems },
             children: dayNodes
         )
     }
@@ -100,6 +106,7 @@ enum ProgressTreeBuilder {
             lastDay: day.day,
             syncedItems: day.syncedItems,
             totalItems: day.totalItems,
+            hiddenItems: day.hiddenItems,
             children: []
         )
     }
