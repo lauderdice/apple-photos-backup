@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from photos_backup.library import DateRange, RangeStatus, read_range_status, system_library_path
-from photos_backup.progress import compute_day_progress
+from photos_backup.progress import compute_day_progress, read_synced_uuids
 from photos_backup.safeguards import (
     compare_drive,
     fingerprint_files,
@@ -63,13 +63,19 @@ def require_external_target(target: Path) -> Path:
     return resolved_target
 
 
-def require_room_to_download(status: RangeStatus) -> None:
-    free_bytes_after_download = status.library_volume_free_bytes - status.bytes_to_download
-    if free_bytes_after_download < MINIMUM_FREE_BYTES_AFTER_DOWNLOAD:
-        raise SystemExit(
-            f"This range needs {status.bytes_to_download / GIGABYTE:.1f} GB from iCloud, but only "
-            f"{status.library_volume_free_bytes / GIGABYTE:.1f} GB is free on this Mac, and Photos may keep a local "
-            "copy until macOS reclaims the space. Pick a shorter date range."
+class NotEnoughRoomOnThisMac(Exception):
+    pass
+
+
+def require_room_to_download(month: DateRange, bytes_to_download: int, free_bytes: int) -> None:
+    """Photos may keep each download on the Mac until macOS reclaims the space, so a month must fit with room to spare."""
+    if free_bytes - bytes_to_download < MINIMUM_FREE_BYTES_AFTER_DOWNLOAD:
+        raise NotEnoughRoomOnThisMac(
+            f"Stopped before {month.first_day:%B %Y}: it needs {bytes_to_download / GIGABYTE:.1f} GB from iCloud and "
+            f"{free_bytes / GIGABYTE:.1f} GB is free on this Mac. The backup always leaves "
+            f"{MINIMUM_FREE_BYTES_AFTER_DOWNLOAD // GIGABYTE} GB free, because Photos may keep downloaded photos until "
+            "macOS reclaims the space. Everything backed up so far is on the drive. Free up space on this Mac, or "
+            "try again later."
         )
 
 
@@ -104,14 +110,18 @@ def log_range_status(date_range: DateRange, status: RangeStatus) -> None:
     log.info(f"Library:          {status.library_path}")
     log.info(f"Date range:       {date_range.first_day} to {date_range.last_day} (inclusive)")
     log.info(f"Photos & videos:  {status.item_count}")
-    log.info(f"Only in iCloud:   {status.items_only_in_icloud} ({status.bytes_to_download / GIGABYTE:.2f} GB to download)")
+    log.info(f"To download:      {status.items_to_download} only in iCloud ({status.bytes_to_download / GIGABYTE:.2f} GB)")
     if status.hidden_item_count:
         log.info(f"Hidden (skipped): {status.hidden_item_count} (unhide them in Photos to back them up)")
     log.info(f"Free on this Mac: {status.library_volume_free_bytes / GIGABYTE:.2f} GB")
 
 
-def range_status(library_path: Path, date_range: DateRange) -> RangeStatus:
-    return read_range_status(library_path, date_range, before_day=date_range.last_day + timedelta(days=1))
+def range_status(
+    library_path: Path, date_range: DateRange, already_on_drive: frozenset[str] = frozenset()
+) -> RangeStatus:
+    return read_range_status(
+        library_path, date_range, before_day=date_range.last_day + timedelta(days=1), already_on_drive=already_on_drive
+    )
 
 
 class ExportCancelled(Exception):
@@ -172,18 +182,12 @@ def run_export(library_path: Path, date_range: DateRange, target: Path, dry_run:
     start_logging(log_path)
     log.info(f"Started {run_kind}; this log: {log_path}")
 
-    status = range_status(library_path, date_range)
+    status = range_status(library_path, date_range, already_on_drive=frozenset(read_synced_uuids(export_folder)))
     log_range_status(date_range, status)
-    require_room_to_download(status)
 
-    command = build_export_command(library_path, date_range, target, dry_run)
-    require_only_safe_options(command)
     files_before = fingerprint_files(export_folder)
     log.info(f"Files already on the drive: {len(files_before)}")
-    log.info(f"Running: {shlex.join(command)}")
-
-    osxphotos_exit_code = run_osxphotos_logging_every_line(command)
-    log.info(f"osxphotos finished with exit code {osxphotos_exit_code}")
+    osxphotos_exit_code, not_enough_room = export_month_by_month(library_path, date_range, target, dry_run, status)
 
     files_after = fingerprint_files(export_folder)
     changes = compare_drive(files_before, files_after)
@@ -201,7 +205,37 @@ def run_export(library_path: Path, date_range: DateRange, target: Path, dry_run:
 
     require_no_files_disappeared(changes)
     log.info("Check passed: no file that was on the drive before this run is missing.")
+    if not_enough_room:
+        raise SystemExit(str(not_enough_room))
     return osxphotos_exit_code
+
+
+def export_month_by_month(
+    library_path: Path, date_range: DateRange, target: Path, dry_run: bool, status: RangeStatus
+) -> tuple[int, NotEnoughRoomOnThisMac | None]:
+    """Runs osxphotos once per month, checking the Mac's free space first; stops at the first month that fails."""
+    months = date_range.split_by_month()
+    for month_number, month in enumerate(months, start=1):
+        bytes_to_download = status.bytes_to_download_in(month)
+        free_bytes = shutil.disk_usage(library_path).free
+        log.info(
+            f"== Month {month_number} of {len(months)}: {month.first_day} to {month.last_day}, "
+            f"{bytes_to_download / GIGABYTE:.2f} GB to download, {free_bytes / GIGABYTE:.2f} GB free on this Mac"
+        )
+        try:
+            require_room_to_download(month, bytes_to_download, free_bytes)
+        except NotEnoughRoomOnThisMac as not_enough_room:
+            log.error(str(not_enough_room))
+            return 1, not_enough_room
+
+        command = build_export_command(library_path, month, target, dry_run)
+        require_only_safe_options(command)
+        log.info(f"Running: {shlex.join(command)}")
+        osxphotos_exit_code = run_osxphotos_logging_every_line(command)
+        log.info(f"osxphotos finished with exit code {osxphotos_exit_code}")
+        if osxphotos_exit_code != 0:
+            return osxphotos_exit_code, None
+    return 0, None
 
 
 def parse_arguments(arguments: list[str]) -> argparse.Namespace:

@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import signal
 import sys
 import threading
@@ -33,8 +34,13 @@ def fake_osxphotos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             return arguments_file.exists()
 
         @property
+        def calls(self) -> list[list[str]]:
+            return [json.loads(line) for line in arguments_file.read_text().splitlines()] if self.was_run else []
+
+        @property
         def arguments(self) -> list[str]:
-            return json.loads(arguments_file.read_text())
+            [only_call] = self.calls
+            return only_call
 
     return FakeOsxphotos()
 
@@ -60,7 +66,7 @@ class TestExport:
         assert export_one_day(fake_library, backup_target) == 0
 
         log = only_log_file(backup_target)
-        assert "Only in iCloud:   1 (0.00 GB to download)" in log
+        assert "To download:      1 only in iCloud (0.00 GB)" in log
         assert "Files already on the drive: 0" in log
         assert "Running: " in log and "--download-missing" in log
         assert "osxphotos | Exported new file" in log
@@ -120,6 +126,70 @@ class TestExport:
         assert "osxphotos finished with exit code 3" in log
 
 
+def from_to_dates(call: list[str]) -> tuple[str, str]:
+    return call[call.index("--from-date") + 1], call[call.index("--to-date") + 1]
+
+
+class TestMonthByMonth:
+    """A long range is exported one month at a time, checking this Mac's free space before each month."""
+
+    def test_a_range_spanning_months_runs_osxphotos_once_per_month(self, fake_library, backup_target, fake_osxphotos):
+        fake_osxphotos.use_scenario("nothing")
+
+        assert run_cli("--library", str(fake_library), "export", "--from", "2025-12-20", "--to", "2026-02-14", str(backup_target)) == 0
+
+        assert [from_to_dates(call) for call in fake_osxphotos.calls] == [
+            ("2025-12-20", "2026-01-01"),
+            ("2026-01-01", "2026-02-01"),
+            ("2026-02-01", "2026-02-15"),
+        ]
+        assert "== Month 3 of 3: 2026-02-01 to 2026-02-14" in only_log_file(backup_target)
+
+    def test_a_year_too_big_for_the_mac_at_once_still_runs_when_each_month_fits(
+        self, fake_library, backup_target, fake_osxphotos, monkeypatch
+    ):
+        monkeypatch.setattr(cli, "MINIMUM_FREE_BYTES_AFTER_DOWNLOAD", 0)
+        free_bytes = shutil.disk_usage(fake_library).free
+        FakePhotosDB.photos_in_library = [
+            photo_taken(f"month-{month}", 2022, month, 10, original_filesize=free_bytes // 2) for month in range(1, 13)
+        ]
+        fake_osxphotos.use_scenario("nothing")
+
+        assert run_cli("--library", str(fake_library), "export", "--from", "2022-01-01", "--to", "2022-12-31", str(backup_target)) == 0
+
+        assert len(fake_osxphotos.calls) == 12
+
+    def test_stops_at_the_first_month_that_does_not_fit_and_still_checks_the_drive(
+        self, fake_library, backup_target, fake_osxphotos
+    ):
+        FakePhotosDB.photos_in_library = [photo_taken("huge-video", 2026, 2, 14, original_filesize=10**15)]
+        fake_osxphotos.use_scenario("nothing")
+
+        with pytest.raises(SystemExit, match="Stopped before February 2026"):
+            run_cli("--library", str(fake_library), "export", "--from", "2026-01-01", "--to", "2026-03-31", str(backup_target))
+
+        assert [from_to_dates(call) for call in fake_osxphotos.calls] == [("2026-01-01", "2026-02-01")]
+        assert "Check passed" in only_log_file(backup_target)
+
+    def test_photos_already_on_the_drive_are_not_counted_as_downloads(self, fake_library, backup_target, fake_osxphotos):
+        FakePhotosDB.photos_in_library = [photo_taken("backed-up-video", 2026, 2, 14, original_filesize=10**15)]
+        export_folder = backup_target / "Photos Library"
+        create_exported_file(export_folder, "2026/02/14/backed-up-video.mov")
+        write_export_database(export_folder, {"2026/02/14/backed-up-video.mov": "backed-up-video"})
+        fake_osxphotos.use_scenario("nothing")
+
+        assert export_one_day(fake_library, backup_target) == 0
+
+        assert "To download:      0 only in iCloud (0.00 GB)" in only_log_file(backup_target)
+
+    def test_a_failing_month_stops_the_rest(self, fake_library, backup_target, fake_osxphotos):
+        fake_osxphotos.use_scenario("fail")
+
+        assert run_cli("--library", str(fake_library), "export", "--from", "2026-01-01", "--to", "2026-03-31", str(backup_target)) == 3
+
+        assert len(fake_osxphotos.calls) == 1
+
+
 class TestNothingGetsLostSilently:
     def test_a_file_disappearing_during_export_stops_with_an_error(self, fake_library, backup_target, fake_osxphotos):
         create_exported_file(backup_target / "Photos Library", "2026/02/14/precious.HEIC")
@@ -140,7 +210,7 @@ class TestNothingGetsLostSilently:
 
     def test_finder_and_export_database_churn_is_not_reported(self, fake_library, backup_target, fake_osxphotos):
         create_exported_file(backup_target / "Photos Library", ".DS_Store")
-        create_exported_file(backup_target / "Photos Library", ".osxphotos_export.db", b"old database")
+        write_export_database(backup_target / "Photos Library", {})
         fake_osxphotos.use_scenario("export")
 
         export_one_day(fake_library, backup_target)
@@ -165,7 +235,7 @@ class TestRefusesBeforeTouchingAnything:
         FakePhotosDB.photos_in_library = [photo_taken("huge-video", 2026, 2, 14, original_filesize=10**15)]
         fake_osxphotos.use_scenario("export")
 
-        with pytest.raises(SystemExit, match="Pick a shorter date range"):
+        with pytest.raises(SystemExit, match="Stopped before February 2026"):
             export_one_day(fake_library, backup_target)
 
         assert not fake_osxphotos.was_run
@@ -196,7 +266,7 @@ class TestStatus:
 
         output = capsys.readouterr().out
         assert "Photos & videos:  2" in output
-        assert "Only in iCloud:   1 (1.50 GB to download)" in output
+        assert "To download:      1 only in iCloud (1.50 GB)" in output
         assert sorted(tmp_path.rglob("*")) == files_before
 
 

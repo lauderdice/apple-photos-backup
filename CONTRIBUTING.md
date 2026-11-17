@@ -55,8 +55,9 @@ export doesn't work under iTerm2.
 - After every run the CLI compares the drive with how it was before. New and changed files are logged, and if
   anything disappeared the run fails with the list of files.
 - Every run writes a timestamped log to `photos-backup-logs/` on the drive.
-- A range is refused if downloading it would leave under 20 GB free on the Mac. Photos keeps downloaded
-  originals until macOS reclaims the space, and every frame of a burst counts.
+- A range is exported one month at a time. Before each month the CLI checks that downloading it would leave
+  at least 20 GB free on the Mac, and stops if not. Photos keeps downloaded originals until macOS reclaims the
+  space. Every frame of a burst counts; photos already on the drive don't.
 - The target must be on a connected drive under `/Volumes`.
 - SIGTERM (the app's Cancel button) stops osxphotos as well. The drive check still runs and the CLI exits
   with code 143.

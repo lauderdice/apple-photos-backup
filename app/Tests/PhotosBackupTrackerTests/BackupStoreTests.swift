@@ -316,6 +316,35 @@ struct BackupStoreSyncLifecycleTests {
         #expect(store.syncProgress == nil)
     }
 
+    @Test func aYearSyncShowsWhichMonthItIsOnAndRestartsTheCounterEachMonth() async throws {
+        let day = try await loadAndFind("2016-12-24")
+        await runner.answerExport(lines: [
+            "INFO    == Month 1 of 12: 2016-01-01 to 2016-01-31, 0.10 GB to download, 50.00 GB free on this Mac",
+            "INFO    osxphotos | Exporting IMG_1.HEIC (A.heic) (5/5)",
+            "INFO    == Month 2 of 12: 2016-02-01 to 2016-02-29, 0.10 GB to download, 50.00 GB free on this Mac",
+        ])
+        await runner.waitForCancellationAfterLines()
+
+        let syncing = try #require(store.sync(day))
+        while store.syncMonth?.monthNumber != 2 { await Task.yield() }
+
+        #expect(store.syncMonth == SyncMonth(monthNumber: 2, monthCount: 12, firstDay: "2016-02-01"))
+        #expect(store.syncProgress == nil)
+        store.cancelSync()
+        await syncing.value
+        #expect(store.syncMonth == nil)
+    }
+
+    @Test func runningOutOfSpaceOnTheMacIsReportedAsAPause() async throws {
+        let day = try await loadAndFind("2016-12-24")
+        let explanation = "Stopped before March 2016: it needs 9.0 GB from iCloud and 25.0 GB is free on this Mac."
+        await runner.answerExport(lines: ["2026-11-17 13:30:01,002 ERROR   " + explanation, explanation], exitCode: 1)
+
+        try await #require(store.sync(day)).value
+
+        #expect(store.lastSyncOutcome == .stoppedForLackOfSpace(explanation: explanation))
+    }
+
     @Test func cancellingStopsTheSyncAndSaysSo() async throws {
         let day = try await loadAndFind("2016-12-24")
         await runner.waitForCancellationAfterLines()

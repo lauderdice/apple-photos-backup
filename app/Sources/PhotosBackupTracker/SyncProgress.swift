@@ -20,10 +20,38 @@ struct SyncProgress: Equatable {
     }
 }
 
+/// Which month a sync is on: the CLI backs up long ranges one month at a time and logs "== Month 3 of 12: 2022-03-01 to …".
+struct SyncMonth: Equatable {
+    let monthNumber: Int
+    let monthCount: Int
+    let firstDay: String
+
+    private static let monthLine = #/== Month (?<number>\d+) of (?<count>\d+): (?<firstDay>\d{4}-\d{2}-\d{2}) to /#
+
+    static func parse(logLine: String) -> SyncMonth? {
+        guard let match = logLine.firstMatch(of: monthLine),
+              let monthNumber = Int(match.number),
+              let monthCount = Int(match.count)
+        else { return nil }
+        return SyncMonth(monthNumber: monthNumber, monthCount: monthCount, firstDay: String(match.firstDay))
+    }
+}
+
+/// The CLI's explanation when it stopped because this Mac is low on space, or nil for other lines.
+enum NotEnoughSpaceOnMac {
+    private static let marker = "Stopped before "
+
+    static func explanation(inLogLine logLine: String) -> String? {
+        guard let start = logLine.range(of: marker)?.lowerBound else { return nil }
+        return String(logLine[start...])
+    }
+}
+
 /// How the last sync ended.
 enum SyncOutcome: Equatable {
     case finished
     case failed(exitCode: Int32)
+    case stoppedForLackOfSpace(explanation: String)
     case cancelled
     case couldNotStart(reason: String)
 }

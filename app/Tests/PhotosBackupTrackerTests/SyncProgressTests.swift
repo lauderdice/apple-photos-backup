@@ -33,6 +33,26 @@ struct SyncProgressTests {
     }
 }
 
+@Suite("Month-by-month backups from log lines")
+struct SyncMonthTests {
+    @Test func readsWhichMonthTheBackupIsOn() {
+        let line = "2026-11-17 13:30:01,002 INFO    == Month 3 of 12: 2022-03-01 to 2022-03-31, 1.20 GB to download, 30.10 GB free on this Mac"
+
+        #expect(SyncMonth.parse(logLine: line) == SyncMonth(monthNumber: 3, monthCount: 12, firstDay: "2022-03-01"))
+    }
+
+    @Test func otherLinesAreNotMonths() {
+        #expect(SyncMonth.parse(logLine: "INFO    osxphotos | Exporting IMG_1.HEIC (U.heic) (1/2)") == nil)
+    }
+
+    @Test func findsTheLowSpaceExplanationInTimestampedAndPlainLines() {
+        let plain = "Stopped before March 2022: it needs 9.0 GB from iCloud and 25.0 GB is free on this Mac."
+        #expect(NotEnoughSpaceOnMac.explanation(inLogLine: plain) == plain)
+        #expect(NotEnoughSpaceOnMac.explanation(inLogLine: "2026-11-17 13:30:01,002 ERROR   " + plain) == plain)
+        #expect(NotEnoughSpaceOnMac.explanation(inLogLine: "INFO    Files already on the drive: 4") == nil)
+    }
+}
+
 @Suite("Friendly error messages")
 struct FriendlyErrorTests {
     @Test func unpluggedDrive() {

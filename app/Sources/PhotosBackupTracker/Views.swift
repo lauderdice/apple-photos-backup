@@ -428,7 +428,7 @@ struct SyncPanel: View {
         if store.isSyncing || store.lastSyncOutcome != nil {
             VStack(alignment: .leading, spacing: 10) {
                 if let activeSyncTitle = store.activeSyncTitle {
-                    SyncingStatus(title: activeSyncTitle, progress: store.syncProgress)
+                    SyncingStatus(title: activeSyncTitle, progress: store.syncProgress, month: store.syncMonth)
                 } else if let outcome = store.lastSyncOutcome, let title = store.lastSyncTitle {
                     SyncResult(title: title, outcome: outcome)
                 }
@@ -450,11 +450,17 @@ struct SyncingStatus: View {
     @Environment(BackupStore.self) private var store
     let title: String
     let progress: SyncProgress?
+    let month: SyncMonth?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Backing up \(title)…").font(.headline)
+                if let month, month.monthCount > 1 {
+                    Text("\(Self.monthTitle(month.firstDay)) · month \(month.monthNumber) of \(month.monthCount)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button("Cancel", role: .cancel) { store.cancelSync() }
                     .help("Stop after the current photo. Anything already copied stays on the drive.")
@@ -473,6 +479,11 @@ struct SyncingStatus: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private static func monthTitle(_ isoDay: String) -> String {
+        guard let date = try? Date(isoDay, strategy: .iso8601.year().month().day()) else { return isoDay }
+        return date.formatted(.dateTime.month(.wide).year())
     }
 }
 
@@ -497,7 +508,7 @@ struct SyncResult: View {
         switch outcome {
         case .finished: "checkmark.circle.fill"
         case .cancelled: "stop.circle.fill"
-        case .failed, .couldNotStart: "exclamationmark.triangle.fill"
+        case .failed, .couldNotStart, .stoppedForLackOfSpace: "exclamationmark.triangle.fill"
         }
     }
 
@@ -505,7 +516,7 @@ struct SyncResult: View {
         switch outcome {
         case .finished: .green
         case .cancelled: .secondary
-        case .failed, .couldNotStart: .orange
+        case .failed, .couldNotStart, .stoppedForLackOfSpace: .orange
         }
     }
 
@@ -513,6 +524,7 @@ struct SyncResult: View {
         switch outcome {
         case .finished: "\(title) is backed up"
         case .cancelled: "Backing up \(title) was cancelled"
+        case .stoppedForLackOfSpace: "Backing up \(title) paused: this Mac is low on space"
         case .failed, .couldNotStart: "Backing up \(title) didn't finish"
         }
     }
@@ -523,6 +535,7 @@ struct SyncResult: View {
         case .cancelled: "Everything copied so far stays on the drive. Sync again to continue."
         case .failed(let exitCode): "Something went wrong (code \(exitCode)). Open Details to see what happened."
         case .couldNotStart(let reason): FriendlyError.describe(reason).advice
+        case .stoppedForLackOfSpace(let explanation): explanation
         }
     }
 }

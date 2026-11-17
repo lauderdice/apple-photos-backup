@@ -17,6 +17,24 @@ class TestDateRange:
             DateRange(first_day=date(2026, 2, 15), last_day=date(2026, 2, 14))
 
 
+class TestSplitByMonth:
+    def test_a_single_day_is_one_piece(self):
+        single_day = DateRange(date(2026, 2, 14), date(2026, 2, 14))
+        assert single_day.split_by_month() == [single_day]
+
+    def test_a_whole_year_is_twelve_whole_months(self):
+        months = DateRange(date(2024, 1, 1), date(2024, 12, 31)).split_by_month()
+        assert len(months) == 12
+        assert months[1] == DateRange(date(2024, 2, 1), date(2024, 2, 29))
+        assert months[-1] == DateRange(date(2024, 12, 1), date(2024, 12, 31))
+
+    def test_partial_months_at_both_ends_keep_the_requested_days(self):
+        assert DateRange(date(2025, 12, 20), date(2026, 1, 5)).split_by_month() == [
+            DateRange(date(2025, 12, 20), date(2025, 12, 31)),
+            DateRange(date(2026, 1, 1), date(2026, 1, 5)),
+        ]
+
+
 class TestReadRangeStatus:
     def test_counts_items_and_bytes_still_only_in_icloud(self, fake_library: Path):
         FakePhotosDB.photos_in_library = [
@@ -30,7 +48,7 @@ class TestReadRangeStatus:
         )
 
         assert status.item_count == 2
-        assert status.items_only_in_icloud == 1
+        assert status.items_to_download == 1
         assert status.bytes_to_download == 3_000
         assert status.library_path == fake_library
         assert status.library_volume_free_bytes > 0
@@ -42,7 +60,36 @@ class TestReadRangeStatus:
             fake_library, DateRange(date(2026, 2, 14), date(2026, 2, 14)), before_day=date(2026, 2, 15)
         )
 
-        assert (status.item_count, status.items_only_in_icloud, status.bytes_to_download) == (0, 0, 0)
+        assert (status.item_count, status.items_to_download, status.bytes_to_download) == (0, 0, 0)
+
+    def test_photos_already_on_the_drive_are_not_downloaded_again(self, fake_library: Path):
+        FakePhotosDB.photos_in_library = [
+            photo_taken("backed-up", 2026, 2, 14, original_filesize=3_000),
+            photo_taken("not-yet", 2026, 2, 14, original_filesize=5_000),
+        ]
+
+        status = read_range_status(
+            fake_library,
+            DateRange(date(2026, 2, 14), date(2026, 2, 14)),
+            before_day=date(2026, 2, 15),
+            already_on_drive=frozenset({"backed-up"}),
+        )
+
+        assert (status.item_count, status.items_to_download, status.bytes_to_download) == (2, 1, 5_000)
+
+    def test_download_size_can_be_read_per_month(self, fake_library: Path):
+        FakePhotosDB.photos_in_library = [
+            photo_taken("january", 2022, 1, 31, original_filesize=1_000),
+            photo_taken("february", 2022, 2, 1, original_filesize=20_000),
+        ]
+
+        status = read_range_status(
+            fake_library, DateRange(date(2022, 1, 1), date(2022, 12, 31)), before_day=date(2023, 1, 1)
+        )
+
+        assert status.bytes_to_download_in(DateRange(date(2022, 1, 1), date(2022, 1, 31))) == 1_000
+        assert status.bytes_to_download_in(DateRange(date(2022, 2, 1), date(2022, 2, 28))) == 20_000
+        assert status.bytes_to_download_in(DateRange(date(2022, 3, 1), date(2022, 3, 31))) == 0
 
     def test_missing_library_fails_fast(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError, match="Photos library not found"):
@@ -88,7 +135,7 @@ class TestReadRangeStatusWithBursts:
         )
 
         assert status.item_count == 6
-        assert status.items_only_in_icloud == 6
+        assert status.items_to_download == 6
         assert status.bytes_to_download == 1_000 + 5 * 2_000
 
 

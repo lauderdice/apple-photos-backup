@@ -1,7 +1,7 @@
 """Pretends to be `python -m osxphotos`, so the CLI can be exercised without touching Photos.
 
-The scenario comes from $FAKE_OSXPHOTOS_SCENARIO; the arguments it was called with are written as JSON to
-$FAKE_OSXPHOTOS_ARGUMENTS_FILE so tests can inspect them.
+The scenario comes from $FAKE_OSXPHOTOS_SCENARIO; the arguments of every call are appended as one JSON line
+to $FAKE_OSXPHOTOS_ARGUMENTS_FILE so tests can inspect them.
 """
 
 import json
@@ -17,7 +17,8 @@ def first_existing_photo(export_folder: Path) -> Path:
 
 def main() -> int:
     arguments = sys.argv[1:]
-    Path(os.environ["FAKE_OSXPHOTOS_ARGUMENTS_FILE"]).write_text(json.dumps(arguments))
+    with Path(os.environ["FAKE_OSXPHOTOS_ARGUMENTS_FILE"]).open("a") as arguments_file:
+        arguments_file.write(json.dumps(arguments) + "\n")
     export_folder = Path(arguments[1])
     scenario = os.environ["FAKE_OSXPHOTOS_SCENARIO"]
     print("osxphotos version: fake")

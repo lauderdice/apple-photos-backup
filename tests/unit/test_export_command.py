@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from photos_backup import cli
-from photos_backup.library import DateRange, RangeStatus
+from photos_backup.library import DateRange
 from photos_backup.safeguards import require_only_safe_options
 
 GIGABYTE = 1_000_000_000
@@ -84,23 +84,14 @@ class TestRequireExternalTarget:
 
 
 class TestRequireRoomToDownload:
-    @staticmethod
-    def status(bytes_to_download: int, free_bytes: int) -> RangeStatus:
-        return RangeStatus(
-            library_path=Path("/Library.photoslibrary"),
-            item_count=1,
-            items_only_in_icloud=1,
-            bytes_to_download=bytes_to_download,
-            library_volume_free_bytes=free_bytes,
-            hidden_item_count=0,
-        )
+    march = DateRange(date(2022, 3, 1), date(2022, 3, 31))
 
     def test_enough_room_passes(self):
-        cli.require_room_to_download(self.status(bytes_to_download=10 * GIGABYTE, free_bytes=100 * GIGABYTE))
+        cli.require_room_to_download(self.march, bytes_to_download=10 * GIGABYTE, free_bytes=100 * GIGABYTE)
 
     def test_exactly_twenty_gigabytes_left_passes(self):
-        cli.require_room_to_download(self.status(bytes_to_download=80 * GIGABYTE, free_bytes=100 * GIGABYTE))
+        cli.require_room_to_download(self.march, bytes_to_download=80 * GIGABYTE, free_bytes=100 * GIGABYTE)
 
-    def test_leaving_under_twenty_gigabytes_is_refused(self):
-        with pytest.raises(SystemExit, match="Pick a shorter date range"):
-            cli.require_room_to_download(self.status(bytes_to_download=81 * GIGABYTE, free_bytes=100 * GIGABYTE))
+    def test_leaving_under_twenty_gigabytes_is_refused_naming_the_month(self):
+        with pytest.raises(cli.NotEnoughRoomOnThisMac, match="Stopped before March 2022: it needs 81.0 GB"):
+            cli.require_room_to_download(self.march, bytes_to_download=81 * GIGABYTE, free_bytes=100 * GIGABYTE)

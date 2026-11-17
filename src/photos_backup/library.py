@@ -1,8 +1,9 @@
 """Read-only inspection of the Photos library for one date range."""
 
 import shutil
+from collections import Counter
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import osxphotos
@@ -19,15 +20,36 @@ class DateRange:
         if self.last_day < self.first_day:
             raise ValueError(f"--to ({self.last_day}) is before --from ({self.first_day})")
 
+    def contains(self, day: date) -> bool:
+        return self.first_day <= day <= self.last_day
+
+    def split_by_month(self) -> list["DateRange"]:
+        """The range cut at month boundaries, so a long backup can check the Mac's free space before each month."""
+        months = []
+        first_day = self.first_day
+        while first_day <= self.last_day:
+            first_day_of_next_month = (first_day.replace(day=1) + timedelta(days=32)).replace(day=1)
+            months.append(DateRange(first_day, min(self.last_day, first_day_of_next_month - timedelta(days=1))))
+            first_day = first_day_of_next_month
+        return months
+
 
 @dataclass(frozen=True)
 class RangeStatus:
     library_path: Path
     item_count: int
-    items_only_in_icloud: int
-    bytes_to_download: int
+    # Only in iCloud and not on the drive yet: what this backup has to download.
+    items_to_download: int
+    bytes_to_download_by_day: dict[date, int]
     library_volume_free_bytes: int
     hidden_item_count: int
+
+    @property
+    def bytes_to_download(self) -> int:
+        return sum(self.bytes_to_download_by_day.values())
+
+    def bytes_to_download_in(self, date_range: DateRange) -> int:
+        return sum(size for day, size in self.bytes_to_download_by_day.items() if date_range.contains(day))
 
 
 @dataclass(frozen=True)
@@ -75,7 +97,9 @@ def select_for_backup(photos: list[PhotoInfo]) -> BackupSelection:
     )
 
 
-def read_range_status(library_path: Path, date_range: DateRange, before_day: date) -> RangeStatus:
+def read_range_status(
+    library_path: Path, date_range: DateRange, before_day: date, already_on_drive: frozenset[str] = frozenset()
+) -> RangeStatus:
     if not library_path.is_dir():
         raise FileNotFoundError(f"Photos library not found: {library_path}")
 
@@ -86,13 +110,18 @@ def read_range_status(library_path: Path, date_range: DateRange, before_day: dat
             to_date=datetime.combine(before_day, datetime.min.time()),
         )
     )
-    photos_only_in_icloud = [photo for photo in selection.photos if photo.ismissing]
+    photos_to_download = [
+        photo for photo in selection.photos if photo.ismissing and photo.uuid not in already_on_drive
+    ]
+    bytes_to_download_by_day: Counter[date] = Counter()
+    for photo in photos_to_download:
+        bytes_to_download_by_day[photo.date.date()] += photo.original_filesize
 
     return RangeStatus(
         library_path=library_path,
         item_count=len(selection.photos),
-        items_only_in_icloud=len(photos_only_in_icloud),
-        bytes_to_download=sum(photo.original_filesize for photo in photos_only_in_icloud),
+        items_to_download=len(photos_to_download),
+        bytes_to_download_by_day=dict(bytes_to_download_by_day),
         library_volume_free_bytes=shutil.disk_usage(library_path).free,
         hidden_item_count=len(selection.hidden_photos),
     )

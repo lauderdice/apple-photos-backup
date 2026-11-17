@@ -35,7 +35,7 @@ back up a year, a month or a single day with one click.
 ## Download and install
 
 1. Go to the [**latest release**](../../releases/latest) and download the file ending in **`.dmg`**
-   (for example `Photos-Backup-Tracker-0.1.0-arm64.dmg`).
+   (for example `Photos-Backup-Tracker-0.1.2-arm64.dmg`).
 2. Open the downloaded file. A window appears with the app and an **Applications** folder.
 3. **Drag Photos Backup Tracker onto the Applications folder.**
 4. Close the window, then eject the disk image: in Finder, click the ⏏ next to "Photos Backup Tracker" in the sidebar.
@@ -102,7 +102,8 @@ backs up the whole period you're looking at, for example all of 2016.
 
 <p align="center"><img src="docs/screenshots/6-syncing.png" width="640" alt="December 2016 being backed up: 214 of 631, with a progress bar and a Cancel button"></p>
 
-While it works, the bar at the bottom shows how far it is and which photo it's copying. Photos that are only
+While it works, the bar at the bottom shows how far it is and which photo it's copying. A whole year is
+backed up one month at a time, and the bar shows which month it's on. Photos that are only
 in iCloud are downloaded first, so some take longer than others.
 
 - **Cancel** stops after the current photo. Everything copied so far stays on the drive; click **Sync** again
@@ -150,10 +151,11 @@ the drive instead.
 **"Couldn't find your Photos library"**
 Open the Photos app once, so macOS knows where your library is, then click **Try Again**.
 
-**The app says there isn't enough space on the Mac**
-While copying, Photos keeps each downloaded photo on your Mac until macOS clears the space by itself. If your
-Mac is low on space, the app won't start a big backup. Back up a single month instead, or wait a while and try
-again.
+**"Paused: this Mac is low on space"**
+While copying, Photos keeps each downloaded photo on your Mac until macOS clears the space by itself. So the app
+backs up one month at a time, and always leaves 20 GB free on your Mac. If the next month doesn't fit, it pauses.
+Everything copied so far stays on the drive. Free up some space on your Mac, or wait a while for macOS to clear
+it, then click **Sync** again: it carries on with the month it paused at.
 
 **A backup "didn't finish"**
 Click **Details** to see what happened. Usually the drive was unplugged, the Mac went to sleep or the internet

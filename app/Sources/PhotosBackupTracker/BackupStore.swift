@@ -16,6 +16,8 @@ final class BackupStore {
     /// Title of the period being synced right now, e.g. "December 2016".
     private(set) var activeSyncTitle: String?
     private(set) var syncProgress: SyncProgress?
+    private(set) var syncMonth: SyncMonth?
+    private var lackOfSpaceExplanation: String?
     private(set) var syncLog: [String] = []
     /// Title and outcome of the last finished sync, until dismissed or a new sync starts.
     private(set) var lastSyncTitle: String?
@@ -50,6 +52,7 @@ final class BackupStore {
         switch lastSyncOutcome {
         case .finished: return "\(lastSyncTitle): finished"
         case .failed(let exitCode): return "\(lastSyncTitle): failed with exit code \(exitCode) — see the details"
+        case .stoppedForLackOfSpace(let explanation): return "\(lastSyncTitle): paused — \(explanation)"
         case .cancelled: return "\(lastSyncTitle): cancelled"
         case .couldNotStart(let reason): return "\(lastSyncTitle): could not start — \(reason)"
         }
@@ -93,6 +96,8 @@ final class BackupStore {
         guard node.canBeSynced, !isSyncing, let backupTarget else { return nil }
         activeSyncTitle = node.title
         syncProgress = nil
+        syncMonth = nil
+        lackOfSpaceExplanation = nil
         syncLog = []
         lastSyncTitle = nil
         lastSyncOutcome = nil
@@ -105,7 +110,15 @@ final class BackupStore {
                 ) { line in
                     await self.appendLogLine(line)
                 }
-                outcome = Task.isCancelled ? .cancelled : (exitCode == 0 ? .finished : .failed(exitCode: exitCode))
+                if Task.isCancelled {
+                    outcome = .cancelled
+                } else if exitCode == 0 {
+                    outcome = .finished
+                } else if let lackOfSpaceExplanation {
+                    outcome = .stoppedForLackOfSpace(explanation: lackOfSpaceExplanation)
+                } else {
+                    outcome = .failed(exitCode: exitCode)
+                }
             } catch {
                 outcome = Task.isCancelled ? .cancelled : .couldNotStart(reason: error.localizedDescription)
             }
@@ -113,6 +126,7 @@ final class BackupStore {
             lastSyncOutcome = outcome
             activeSyncTitle = nil
             syncProgress = nil
+            syncMonth = nil
             syncTask = nil
             await reload()
         }
@@ -139,6 +153,13 @@ final class BackupStore {
         }
         if let progress = SyncProgress.parse(logLine: line) {
             syncProgress = progress
+        }
+        if let month = SyncMonth.parse(logLine: line) {
+            syncMonth = month
+            syncProgress = nil
+        }
+        if let explanation = NotEnoughSpaceOnMac.explanation(inLogLine: line) {
+            lackOfSpaceExplanation = explanation
         }
     }
 }

@@ -27,8 +27,9 @@ TARGET/photos-backup-logs/export_<from>_to_<to>.csv   osxphotos report, appended
 
 - The CLI sizes a range from the Photos database, then runs `osxphotos export` for it. Items missing locally
   are fetched through PhotoKit, staged on the target drive (`--tmpdir`) and copied into place.
-- Photos keeps downloaded originals in the local library until macOS reclaims the space, so the CLI refuses
-  ranges that would leave less than 20 GB free on the Mac.
+- Photos keeps downloaded originals in the local library until macOS reclaims the space. So the CLI exports a
+  long range one month at a time, and before each month checks that downloading it leaves at least 20 GB free
+  on the Mac. It stops cleanly at the first month that doesn't fit.
 - osxphotos's version check against pypi.org is disabled (`OSXPHOTOS_NO_VERSION_CHECK=1`). Apart from
   Photos's own iCloud traffic, nothing leaves the Mac.
 - PhotoKit access is granted per app. The app declares `NSPhotoLibraryUsageDescription`, so osxphotos, running
@@ -47,10 +48,11 @@ TARGET/photos-backup-logs/export_<from>_to_<to>.csv   osxphotos report, appended
       local file (`is_written_by_osxphotos_export()`, the same rule as osxphotos's `cli/export.py`).
     - It sets hidden photos apart. PhotoKit never returns hidden assets to other apps, even with
       `includeHiddenAssets`, so they can't be exported while hidden.
-  - `DateRange` holds an inclusive first/last day and is validated on creation.
-  - `RangeStatus` holds item count, iCloud-only count, bytes to download (hidden photos excluded), the hidden
-    count, and free space on the library volume.
-  - `read_range_status()` computes it.
+  - `DateRange` holds an inclusive first/last day, is validated on creation, and `split_by_month()` cuts it at
+    month boundaries.
+  - `RangeStatus` holds the item count, the items to download (only in iCloud and not already on the drive)
+    with their bytes per day, the hidden count, and free space on the library volume.
+  - `read_range_status()` computes it, given the UUIDs already on the drive.
 - `progress.py`
   - `read_synced_uuids()` copies `.osxphotos_export.db` (and its `-wal`/`-shm`) to a temp folder, so a
     running export is never disturbed. It returns the UUIDs whose exported file still exists on the drive.
@@ -66,9 +68,13 @@ TARGET/photos-backup-logs/export_<from>_to_<to>.csv   osxphotos report, appended
 - `cli.py`: the `photos-backup` entry point.
   - `status --from --to`: prints the range status, read-only.
   - `export --from --to TARGET [--dry-run]`:
-    - requires a connected drive under `/Volumes` and enough room on the Mac;
+    - requires a connected drive under `/Volumes`;
     - opens a timestamped log on the drive (console and file);
-    - runs `osxphotos export` with `--directory {created.year}/{created.mm}/{created.dd} --download-missing
+    - sizes the range, leaving out what `read_synced_uuids()` says is already on the drive;
+    - `export_month_by_month()` logs `== Month n of N: …`, checks the Mac has room for that month
+      (`require_room_to_download()`, raising `NotEnoughRoomOnThisMac` with a "Stopped before MONTH" message),
+      and runs `osxphotos export` once per month. It stops at the first month that is too big or fails;
+    - each osxphotos run uses `--directory {created.year}/{created.mm}/{created.dd} --download-missing
       --use-photokit --not-hidden --update --touch-file --retry 3 --report --append --tmpdir --verbose --no-progress`,
       logging every output line;
     - afterwards logs new, changed and gone files and the Mac's free space, then runs the disappearance check;
@@ -81,7 +87,7 @@ TARGET/photos-backup-logs/export_<from>_to_<to>.csv   osxphotos report, appended
 A SwiftUI app for macOS 14+, built with SwiftPM. No Xcode project is needed; the command-line tools are enough.
 
 - `ProgressTree.swift`: decodes the JSON and builds the Library → year → month → day tree of `ProgressNode`s
-  (synced/total counts, inclusive date ranges, newest first). Years, months and days can be synced; the whole library can't, since it would rarely fit the free-space check.
+  (synced/total counts, inclusive date ranges, newest first). Years, months and days can be synced; the whole library can't.
 - `PhotosBackupCommand.swift`
   - `CommandRunning` is the protocol for running the CLI.
   - `ProcessCommandRunner` either collects output (`run`) or streams it line by line through an async
@@ -94,7 +100,10 @@ A SwiftUI app for macOS 14+, built with SwiftPM. No Xcode project is needed; the
 - `SyncProgress.swift`
   - `SyncProgress.parse()` reads "current of total · file name" from osxphotos's `Exporting NAME (UUID) (n/N)`
     log lines.
-  - `SyncOutcome` describes how a sync ended: finished, failed, cancelled or couldn't start.
+  - `SyncMonth.parse()` reads the CLI's `== Month n of N` lines, so a year sync shows which month it's on.
+  - `NotEnoughSpaceOnMac` picks the CLI's "Stopped before …" explanation out of the log.
+  - `SyncOutcome` describes how a sync ended: finished, failed, paused for lack of space on the Mac, cancelled
+    or couldn't start.
   - `BackupDriveInfo` reads the backup drive's name and free space, or nil when it's unplugged.
   - `FriendlyError` turns CLI error output into plain-language titles and advice.
 - `BackupStore.swift`: `@Observable` state, created with a `CommandRunning` and an optional backup folder.
