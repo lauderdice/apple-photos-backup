@@ -5,7 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-17
+
+### Changed
+
+- Syncing a year, or any range longer than a month, now runs one month at a time and checks the Mac's free
+  space before each month, instead of refusing the whole range up front. The app shows which month it's on,
+  and if the Mac runs low on space it pauses with a clear message rather than "Something went wrong".
+
 ### Fixed
+
+- The free-space check counted photos already on the drive as still to download.
 
 - Hidden photos showed up as "missing" forever: Photos never hands them to other apps. They're now counted
   separately ("N hidden photos aren't included"), skipped by the export, and left out of the free-space check.
